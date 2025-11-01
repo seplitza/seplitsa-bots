@@ -476,6 +476,12 @@ def save_to_google_sheets(user_info):
 
 def collect_user_data_step_by_step(user_id, message_text):
     """Пошаговый сбор данных пользователя"""
+    
+    # 🔥 ДОБАВЛЕНА ПРОВЕРКА НА КОМАНДЫ
+    if message_text.startswith('/'):
+        set_data_collection_mode(user_id, False)
+        return "❌ Режим сбора данных отменен. Используйте /complete_profile чтобы продолжить."
+    
     if user_id not in user_data:
         user_data[user_id] = {
             'user_id': user_id,
@@ -867,11 +873,6 @@ def handle_message(message):
     if handle_author_command(message):
         return
     
-    # Проверяем режим сбора данных
-    if is_data_collection_mode(user.id):
-        handle_data_collection(message)
-        return
-    
     # Обработка обычных сообщений пользователя
     user_message = message.text.strip()
     
@@ -926,15 +927,40 @@ def handle_message(message):
         # Если не найдено в базе знаний, используем AI
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # ИНИЦИИРУЕМ СБОР ДАННЫХ ВО ВРЕМЯ ОЖИДАНИЯ AI
+        # 🔥 ИСПРАВЛЕННЫЙ БЛОК: вместо прерывания - даем ответ и напоминаем
         if user.id not in user_data or not user_data[user.id].get('data_collected', False):
-            set_data_collection_mode(user.id, True)
-            send_safe_message(message.chat.id, 
-                            "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n"
-                            "📝 Как вас зовут?")
-            return
+            # Сначала получаем и отправляем AI-ответ
+            ai_response = ask_deepseek(user_message)
+            
+            # Отправляем AI-ответ
+            if len(ai_response) > 400:
+                short_response = ai_response[:400] + "..."
+                send_safe_message(message.chat.id, short_response, 
+                                reply_markup=create_details_button(user_message))
+            else:
+                send_safe_message(message.chat.id, ai_response)
+            
+            # Затем напоминаем о необходимости завершить анкету
+            reminder_text = (
+                "📋 *Важно: завершите регистрацию!*\n\n"
+                "Чтобы получить персонализированные рекомендации и полный доступ к системе, "
+                "завершите вашу анкету командой:\n"
+                "`/complete_profile`\n\n"
+                "Это займет всего 2 минуты! ⏱️"
+            )
+            
+            send_safe_message(message.chat.id, reminder_text)
+            
+            # Создаем меню
+            if is_author(user):
+                keyboard, title = create_author_menu(current_menu)
+            else:
+                keyboard, title = create_menu(current_menu)
+            
+            send_safe_message(message.chat.id, title, reply_markup=keyboard)
+            return  # Выходим, чтобы не выполнять остальной код
         
-        # Если данные уже собраны, используем AI
+        # 🔥 Если данные УЖЕ собраны - обычная AI-обработка
         ai_response = ask_deepseek(user_message)
         
         # Отправляем ответ AI
@@ -999,47 +1025,20 @@ def handle_details_callback(call):
         logger.error(f"Ошибка обработки callback: {e}")
         bot.answer_callback_query(call.id, "Произошла ошибка")
 
-@bot.message_handler(commands=['progress'])
-def handle_progress_command(message):
-    """Показывает прогресс пользователя и текущее звание"""
-    user_id = message.from_user.id
-    stats = get_user_progress_stats(user_id)
-    
-    progress_text = (
-        f"🏆 **ВАШ ПРОГРЕСС В СИСТЕМЕ СЕПЛИЦА**\n\n"
-        f"📊 **Текущее звание:** {stats['current_rank']}\n"
-        f"✅ Изучено меню: {stats['menus_visited']}\n"
-        f"📚 Прочитано тем: {stats['topics_read']}\n"
-        f"🔍 Нажатий 'Подробнее': {stats['details_clicks']}\n\n"
-    )
-    
-    if stats['next_rank']:
-        progress_text += (
-            f"🎯 **Следующее звание:** {stats['next_rank']}\n"
-            f"📈 Прогресс: {stats['progress_percent']}%\n\n"
-            f"Продолжайте изучать систему для повышения звания!"
-        )
-    else:
-        progress_text += "🎉 **Вы достигли максимального звания!**\nВы — настоящий эксперт системы Сеплица!"
-    
-    send_safe_message(message.chat.id, progress_text)
 
-@bot.message_handler(commands=['rank'])
-def handle_rank_command(message):
-    """Показывает текущее звание пользователя"""
+@bot.message_handler(commands=['complete_profile'])
+def handle_complete_profile(message):
+    """Команда для завершения регистрации"""
     user_id = message.from_user.id
-    current_rank = get_user_rank(user_id)
     
-    rank_text = (
-        f"🏆 **ВАШЕ ТЕКУЩЕЕ ЗВАНИЕ:** {current_rank}\n\n"
-        f"Система званий Сеплица:\n"
-        f"• {USER_RANKS['novice']} - начальный уровень\n"
-        f"• {USER_RANKS['knowledgeable']} - углубленное изучение\n"
-        f"• {USER_RANKS['expert']} - полное освоение системы\n\n"
-        f"Используйте /progress для детальной статистики"
-    )
+    if user_id in user_data and user_data[user_id].get('data_collected', False):
+        send_safe_message(message.chat.id, "✅ Ваш профиль уже завершен!")
+        return
     
-    send_safe_message(message.chat.id, rank_text)
+    set_data_collection_mode(user_id, True)
+    send_safe_message(message.chat.id, 
+                     "📝 Давайте завершим вашу регистрацию!\n\n"
+                     "Как вас зовут?")
 
 # ==================== ЗАПУСК БОТА ====================
 if __name__ == "__main__":
