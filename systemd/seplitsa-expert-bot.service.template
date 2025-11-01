@@ -1,0 +1,17 @@
+[Unit]
+Description=Seplitsa Expert Bot (@lookyounger_bot)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ubuntu/seplitsa-expert-bot
+Environment=PATH=/home/ubuntu/seplitsa-expert-bot/venv/bin
+ExecStart=/home/ubuntu/seplitsa-expert-bot/venv/bin/python /home/ubuntu/seplitsa-expert-bot/seplitza-expert-bot3.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

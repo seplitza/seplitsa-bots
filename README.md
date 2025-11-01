@@ -1,2 +1,29 @@
-# seplitsa-bots
-Telegram bots for Seplitsa system - Expert and Info bots
+# Seplitsa Telegram Bots
+
+Два Telegram бота для системы Сеплица:
+
+## 🤖 Боты
+
+- **@lookyounger_bot** (Expert) - основной бот с AI консультантом
+- **@Seplitza_info_bot** (Info) - информационный бот
+
+## 🏗️ Структура проекта
+
+seplitsa-bots/
+├── bots/ # Код ботов
+│ ├── expert/ # Expert бот
+│ └── info/ # Info бот
+├── data/ # Базы знаний
+├── scripts/ # Скрипты деплоя
+├── systemd/ # Systemd службы
+└── docs/ # Документация
+
+## 🚀 Установка
+
+Смотрите `docs/deployment.md`
+
+## 🔧 Обновление
+
+```bash
+git pull
+scripts/deploy.sh

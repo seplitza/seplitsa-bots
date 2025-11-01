@@ -1,0 +1,17 @@
+[Unit]
+Description=Seplitsa Info Bot (@Seplitza_info_bot)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ubuntu/seplitsa-info-bot
+Environment=PATH=/home/ubuntu/seplitsa-info-bot/venv/bin
+ExecStart=/home/ubuntu/seplitsa-info-bot/venv/bin/python /home/ubuntu/seplitsa-info-bot/seplitza-info-bot1.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
