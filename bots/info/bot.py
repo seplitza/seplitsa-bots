@@ -21,6 +21,9 @@ PID_FILE_CANDIDATES = [
     'bot.pid'
 ]
 
+# Allow overriding the desired PID file via environment (useful for systemd)
+DEFAULT_PID_FILE = os.getenv('SEPLITSA_PID_FILE', '/tmp/seplitsa-info-bot.pid')
+
 def _write_pid(path):
     try:
         pid = str(os.getpid())
@@ -33,13 +36,17 @@ def _write_pid(path):
 
 def create_pid_file():
     """Создает PID файл в первом доступном месте из списка кандидатов"""
-    for p in PID_FILE_CANDIDATES:
+    # Prefer explicit environment-provided path first
+    candidates = [DEFAULT_PID_FILE] + [p for p in PID_FILE_CANDIDATES if p != DEFAULT_PID_FILE]
+
+    for p in candidates:
         if _write_pid(p):
             logger.info(f"✅ PID файл создан: {p}")
             global PID_PATH
             PID_PATH = p
             return True
-    logger.error("❌ Не удалось создать PID файл ни в одном из путей")
+
+    logger.warning("⚠️ Не удалось создать PID файл ни в одном из путей; продолжаем без PID файла")
     return False
 
 def remove_pid_file():
@@ -1349,9 +1356,9 @@ def ensure_clean_start():
         if check_running_instance():
             return False
             
-        # Создаем PID файл
+        # Создаем PID файл — не прерываем запуск, если не удалось создать (systemd может управлять процессом)
         if not create_pid_file():
-            return False
+            logger.warning("⚠️ Продолжаем запуск без PID файла (если вы используете systemd, настройте RuntimeDirectory или SEPLITSA_PID_FILE)")
             
         # Удаляем старый вебхук
         bot.remove_webhook()

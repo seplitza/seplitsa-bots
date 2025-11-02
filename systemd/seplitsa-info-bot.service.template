@@ -14,6 +14,12 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
+# Systemd runtime dir & PID
+RuntimeDirectory=seplitsa-info-bot
+RuntimeDirectoryMode=0755
+Environment=SEPLITSA_PID_FILE=/run/seplitsa-info-bot/seplitsa-info-bot.pid
+PIDFile=/run/seplitsa-info-bot/seplitsa-info-bot.pid
+
 # Ограничения безопасности
 NoNewPrivileges=yes
 ProtectSystem=full
