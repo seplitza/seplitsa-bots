@@ -472,12 +472,6 @@ def save_to_google_sheets(user_info):
 
 def collect_user_data_step_by_step(user_id, message_text):
     """Пошаговый сбор данных пользователя"""
-    
-    # 🔥 ДОБАВЛЕНА ПРОВЕРКА НА КОМАНДЫ
-    if message_text.startswith('/'):
-        set_data_collection_mode(user_id, False)
-        return "❌ Режим сбора данных отменен. Используйте /complete_profile чтобы продолжить."
-    
     if user_id not in user_data:
         user_data[user_id] = {
             'user_id': user_id,
@@ -975,6 +969,16 @@ def handle_message(message):
     else:
         # Если не найдено в базе знаний, используем AI
         bot.send_chat_action(message.chat.id, 'typing')
+        
+        # ИНИЦИИРУЕМ СБОР ДАННЫХ ВО ВРЕМЯ ОЖИДАНИЯ AI
+        if user.id not in user_data or not user_data[user.id].get('data_collected', False):
+            set_data_collection_mode(user.id, True)
+            send_safe_message(message.chat.id, 
+                            "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n"
+                            "📝 Как вас зовут?")
+            return
+        
+        # Если данные уже собраны, используем AI
         ai_response = ask_deepseek(user_message)
         
         # Отправляем ответ AI
@@ -1039,6 +1043,47 @@ def handle_details_callback(call):
         logger.error(f"Ошибка обработки callback: {e}")
         bot.answer_callback_query(call.id, "Произошла ошибка")
 
+@bot.message_handler(commands=['progress'])
+def handle_progress_command(message):
+    """Показывает прогресс пользователя и текущее звание"""
+    user_id = message.from_user.id
+    stats = get_user_progress_stats(user_id)
+    
+    progress_text = (
+        f"🏆 **ВАШ ПРОГРЕСС В СИСТЕМЕ СЕПЛИЦА**\n\n"
+        f"📊 **Текущее звание:** {stats['current_rank']}\n"
+        f"✅ Изучено меню: {stats['menus_visited']}\n"
+        f"📚 Прочитано тем: {stats['topics_read']}\n"
+        f"🔍 Нажатий 'Подробнее': {stats['details_clicks']}\n\n"
+    )
+    
+    if stats['next_rank']:
+        progress_text += (
+            f"🎯 **Следующее звание:** {stats['next_rank']}\n"
+            f"📈 Прогресс: {stats['progress_percent']}%\n\n"
+            f"Продолжайте изучать систему для повышения звания!"
+        )
+    else:
+        progress_text += "🎉 **Вы достигли максимального звания!**\nВы — настоящий эксперт системы Сеплица!"
+    
+    send_safe_message(message.chat.id, progress_text)
+
+@bot.message_handler(commands=['rank'])
+def handle_rank_command(message):
+    """Показывает текущее звание пользователя"""
+    user_id = message.from_user.id
+    current_rank = get_user_rank(user_id)
+    
+    rank_text = (
+        f"🏆 **ВАШЕ ТЕКУЩЕЕ ЗВАНИЕ:** {current_rank}\n\n"
+        f"Система званий Сеплица:\n"
+        f"• {USER_RANKS['novice']} - начальный уровень\n"
+        f"• {USER_RANKS['knowledgeable']} - углубленное изучение\n"
+        f"• {USER_RANKS['expert']} - полное освоение системы\n\n"
+        f"Используйте /progress для детальной статистики"
+    )
+    
+    send_safe_message(message.chat.id, rank_text)
 
 # ==================== ЗАПУСК БОТА ====================
 if __name__ == "__main__":
