@@ -134,54 +134,48 @@ def set_teaching_mode(user_id, mode):
 def create_device_keyboard():
     """Создает клавиатуру выбора устройства"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('iPhone', 'Android')
+    keyboard.add(KeyboardButton('iPhone'), KeyboardButton('Android'))
     return keyboard
 
 def create_financial_keyboard():
     """Создает клавиатуру для финансового положения"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('Экономлю', 'Стабильно')
-    keyboard.add('Могу позволить себе многое', 'Не ограничен')
+    keyboard.add(KeyboardButton('Экономлю'), KeyboardButton('Стабильно'))
+    keyboard.add(KeyboardButton('Могу позволить себе многое'), KeyboardButton('Не ограничен'))
     return keyboard
 
 def create_motivation_keyboard():
     """Создает клавиатуру для мотивации"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('Только знакомлюсь', 'Готов изучать')
-    keyboard.add('Очень настроен', 'Уже работаю над собой')
+    keyboard.add(KeyboardButton('Только знакомлюсь'), KeyboardButton('Готов изучать'))
+    keyboard.add(KeyboardButton('Очень настроен'), KeyboardButton('Уже работаю над собой'))
     return keyboard
 
 def create_menu(menu_key='main'):
-    """Создает клавиатуру для указанного меню"""
+    """Создает клавиатуру для указанного меню (ЕДИНСТВЕННАЯ ВЕРСИЯ)"""
     if menu_key not in MENU_STRUCTURE:
         menu_key = 'main'
-    
     menu = MENU_STRUCTURE[menu_key]
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    
-    # Разбиваем кнопки на ряды по 2 кнопки
-    buttons = menu['buttons']
+    buttons = [KeyboardButton(btn) for btn in menu['buttons']]
     for i in range(0, len(buttons), 2):
-        if i + 1 < len(buttons):
-            keyboard.add(buttons[i], buttons[i + 1])
-        else:
-            keyboard.add(buttons[i])
-    
+        row = buttons[i:i+2]
+        keyboard.add(*row)
     return keyboard, menu['title']
 
 def create_author_menu(menu_key='main'):
     """Создает меню для автора с дополнительной кнопкой обучения"""
     keyboard, title = create_menu(menu_key)
     if menu_key == 'main':
-        keyboard.add('🔧 Обучение')
+        keyboard.add(KeyboardButton('🔧 Обучение'))
     return keyboard, title
 
 def create_teaching_keyboard():
     """Создает клавиатуру для режима обучения"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('📝 Показать базу знаний')
-    keyboard.add('❌ Выйти из режима обучения')
-    keyboard.add('🏠 Главное меню')
+    keyboard.add(KeyboardButton('📝 Показать базу знаний'))
+    keyboard.add(KeyboardButton('❌ Выйти из режима обучения'))
+    keyboard.add(KeyboardButton('🏠 Главное меню'))
     return keyboard
 
 def clean_markdown(text):
@@ -801,10 +795,10 @@ def normalize_key(key):
         return ""
     
     normalized = key.strip().lower()
-    normalized = re.sub(r'[🔙📚💪🙆🥗🔬🎓🛠️❓🏠*_`]', '', normalized)
+    normalized = re.sub(r'[🔙📚💪🙆🥗🔬🎓🛠️❓🏠🔧📝❌*_`\\[\\]]', '', normalized)
     normalized = re.sub(r'назад в главное меню', '', normalized)
+    normalized = re.sub(r'система сеплица: основы', 'система сеплица основы', normalized)
     normalized = normalized.strip()
-    
     return normalized
 
 def find_knowledge_by_key(key):
@@ -815,33 +809,22 @@ def find_knowledge_by_key(key):
         logger.warning("База знаний пуста")
         return None
     
-    logger.info(f"Ищем ключ: '{key}'")
-    
+    original_key = key
     normalized_key = normalize_key(key)
-    logger.info(f"Нормализованный ключ: '{normalized_key}'")
-    
-    # Прямое совпадение (оригинальный ключ)
-    if key in knowledge:
-        logger.info(f"Найдено прямое совпадение по оригинальному ключу: '{key}'")
-        return knowledge[key]
-    
-    # Прямое совпадение (после нормализации)
-    for knowledge_key, value in knowledge.items():
-        if normalize_key(knowledge_key) == normalized_key:
-            logger.info(f"Найдено прямое совпадение: '{knowledge_key}' -> '{normalized_key}'")
-            return value
-    
-    # Частичное совпадение
+    logger.info(f"Поиск: '{original_key}' -> нормализовано: '{normalized_key}'")
+    if original_key in knowledge:
+        logger.info(f"Найдено прямое совпадение: '{original_key}'")
+        return knowledge[original_key]
     for knowledge_key, value in knowledge.items():
         norm_knowledge_key = normalize_key(knowledge_key)
-        if normalized_key in norm_knowledge_key:
-            logger.info(f"Найдено частичное совпадение: '{knowledge_key}' содержит '{normalized_key}'")
+        if norm_knowledge_key == normalized_key:
+            logger.info(f"Найдено по нормализованному ключу: '{knowledge_key}'")
             return value
-        if norm_knowledge_key in normalized_key:
-            logger.info(f"Найдено частичное совпадение: '{normalized_key}' содержит '{knowledge_key}'")
-            return value
-    
-    logger.warning(f"Ключ '{key}' (норм: '{normalized_key}') не найден в базе")
+        if normalized_key in norm_knowledge_key or norm_knowledge_key in normalized_key:
+            if len(normalized_key) > 3:
+                logger.info(f"Найдено частичное совпадение: '{knowledge_key}' ~ '{normalized_key}'")
+                return value
+    logger.warning(f"Ключ не найден: '{original_key}' (норм: '{normalized_key}')")
     return None
 
 def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
@@ -869,37 +852,7 @@ def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
                 clean_text = re.sub(r'[*_`\[\]]', '', text)
                 return bot.send_message(chat_id, clean_text, reply_markup=reply_markup, parse_mode=None)
 
-def create_menu(menu_key='main'):
-    """Создает клавиатуру для указанного меню"""
-    if menu_key not in MENU_STRUCTURE:
-        menu_key = 'main'
-    
-    menu = MENU_STRUCTURE[menu_key]
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    
-    # Группируем кнопки по 2, безопасно обрабатывая последнюю группу
-    buttons = menu['buttons']
-    button_pairs = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
-    
-    for pair in button_pairs:
-        keyboard.add(*pair)  # add() автоматически обработает как одну, так и две кнопки
-    
-    return keyboard, menu['title']
-
-def create_author_menu(menu_key='main'):
-    """Создает меню для автора с дополнительной кнопкой обучения"""
-    keyboard, title = create_menu(menu_key)
-    if menu_key == 'main':
-        keyboard.add('🔧 Обучение')
-    return keyboard, title
-
-def create_teaching_keyboard():
-    """Создает клавиатуру для режима обучения"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('📝 Показать базу знаний')
-    keyboard.add('❌ Выйти из режима обучения')
-    keyboard.add('🏠 Главное меню')
-    return keyboard
+# duplicate old create_menu removed; using the single KeyboardButton-based implementation above
 
 def create_details_button(topic):
     """Создает кнопку 'Подробнее' для инлайн-клавиатуры с безопасным callback_data"""
@@ -1193,27 +1146,22 @@ def handle_fill_profile(message):
 def handle_data_collection(message):
     """Обработчик сбора данных пользователя"""
     user_id = message.from_user.id
-    
-    # Если это команда меню, навигации или системная команда - прерываем сбор данных
-    if message.text.startswith('/') or \
-       message.text in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'] or \
-       any(message.text in menu['buttons'] for menu in MENU_STRUCTURE.values()):
-        # Отключаем режим сбора данных
+    user_message = message.text.strip()
+    logger.info(f"Обработка данных от {user_id}: '{user_message}'")
+    if (message.text.startswith('/') or 
+        user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'] or
+        any(user_message in menu['buttons'] for menu in MENU_STRUCTURE.values())):
+        logger.info(f"Пользователь {user_id} прервал сбор данных командой: '{user_message}'")
         set_data_collection_mode(user_id, False)
-        # Передаем управление основному обработчику
-        handle_message(message)
+        keyboard, title = create_menu('main')
+        send_safe_message(message.chat.id, "✅ Сбор данных прерван. Возвращаемся в главное меню:", reply_markup=keyboard)
         return
-    
-    response = collect_user_data_step_by_step(user_id, message.text)
+    response = collect_user_data_step_by_step(user_id, user_message)
     if response:
         if isinstance(response, tuple):
             send_safe_message(message.chat.id, response[0], reply_markup=response[1])
         else:
             send_safe_message(message.chat.id, response)
-            
-        # После каждого ответа показываем напоминание о возможности использовать меню
-        hint_text = "\n💡 _Вы всегда можете вернуться к изучению системы через меню_"
-        send_safe_message(message.chat.id, hint_text, reply_markup=create_menu('main')[0])
     else:
         send_safe_message(message.chat.id, "Пожалуйста, ответьте на предыдущий вопрос:")
 
@@ -1223,75 +1171,59 @@ def handle_message(message):
     user = message.from_user
     user_id = user.id
     user_message = message.text.strip()
-
-    # 1. Проверка режима сбора данных
+    logger.info(f"Получено сообщение от {user_id}: '{user_message}'")
+    # 1. Проверка режима сбора данных - ПЕРВОЕ ДЕЛО
     if is_data_collection_mode(user_id):
+        logger.info(f"Пользователь {user_id} в режиме сбора данных")
         handle_data_collection(message)
         return
-
     # 2. Обработка команд автора
     if handle_author_command(message):
         return
-
-    # 3. Обработка навигации по меню
+    # 3. Обработка навигации по меню - ПРОВЕРЯЕМ ДО поиска в базе
     current_menu = 'main'
     menu_changed = False
-    
-    # Проверяем, является ли сообщение пунктом меню
     for menu_key, menu_data in MENU_STRUCTURE.items():
         if user_message in menu_data['buttons']:
             current_menu = menu_key
             menu_changed = True
+            logger.info(f"Нажата кнопка меню: '{user_message}' -> '{current_menu}'")
             break
-
     if user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ']:
         current_menu = 'main'
         menu_changed = True
-
+        logger.info("Нажата кнопка возврата в главное меню")
     if menu_changed:
         update_user_progress(user.id, 'menu_visited', current_menu)
-        # Показываем меню сразу для навигации
         keyboard, title = create_menu(current_menu)
         send_safe_message(message.chat.id, title, reply_markup=keyboard)
         return
-
     # 4. Поиск в базе знаний
     knowledge = find_knowledge_by_key(user_message)
-    
     if knowledge:
-        # 🔥 Есть в базе - отвечаем сразу
+        logger.info(f"Найден ответ в базе знаний для: '{user_message}'")
         update_user_progress(user.id, 'topic_read', user_message)
         bot.send_chat_action(message.chat.id, 'typing')
-        
         if len(knowledge) > 400:
             short_response = knowledge[:400] + "..."
-            send_safe_message(message.chat.id, short_response, 
-                            reply_markup=create_details_button(user_message))
+            send_safe_message(message.chat.id, short_response, reply_markup=create_details_button(user_message))
         else:
             send_safe_message(message.chat.id, knowledge)
-            
     else:
-        # 🔥 Нет в базе - проверяем нужно ли собирать данные
         if should_initiate_data_collection(user_id, user_message):
+            logger.info(f"Инициируем сбор данных для пользователя {user_id}")
             set_data_collection_mode(user_id, True)
-            send_safe_message(message.chat.id, 
-                "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n"
-                "📝 Как вас зовут?")
+            send_safe_message(message.chat.id, "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n📝 Как вас зовут?")
             return
-        
-        # 🔥 Если данные уже собраны или пользователь не хочет их заполнять - используем AI
+        logger.info(f"Используем AI для запроса: '{user_message}'")
         bot.send_chat_action(message.chat.id, 'typing')
         ai_response = ask_deepseek(user_message)
-        
         if len(ai_response) > 400:
             short_response = ai_response[:400] + "..."
-            send_safe_message(message.chat.id, short_response, 
-                            reply_markup=create_details_button(user_message))
+            send_safe_message(message.chat.id, short_response, reply_markup=create_details_button(user_message))
         else:
             send_safe_message(message.chat.id, ai_response)
-
-    # 5. Показ меню
-    keyboard = create_menu(current_menu)[0]
+    keyboard = create_menu('main')[0]
     send_safe_message(message.chat.id, "Выберите интересующий вас раздел:", reply_markup=keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('det_'))
