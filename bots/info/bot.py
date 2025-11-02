@@ -13,7 +13,46 @@ from google.oauth2.service_account import Credentials
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
 
-# ==================== ОБРАБОТКА СИГНАЛОВ ====================
+# ==================== УПРАВЛЕНИЕ ПРОЦЕССОМ ====================
+def create_pid_file():
+    """Создает PID файл"""
+    try:
+        pid = str(os.getpid())
+        with open('bot.pid', 'w') as f:
+            f.write(pid)
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания PID файла: {e}")
+        return False
+
+def remove_pid_file():
+    """Удаляет PID файл"""
+    try:
+        os.remove('bot.pid')
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления PID файла: {e}")
+        return False
+
+def check_running_instance():
+    """Проверяет, запущен ли уже бот"""
+    try:
+        if os.path.exists('bot.pid'):
+            with open('bot.pid', 'r') as f:
+                old_pid = int(f.read().strip())
+            # Проверяем, существует ли процесс
+            try:
+                os.kill(old_pid, 0)
+                logger.error(f"❌ Бот уже запущен (PID: {old_pid})")
+                return True
+            except OSError:
+                logger.info("🔄 Найден устаревший PID файл, удаляем...")
+                remove_pid_file()
+        return False
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки запущенного экземпляра: {e}")
+        return False
+
 def signal_handler(sig, frame):
     """Обработчик сигналов для корректного завершения работы бота"""
     logger.info('🛑 Получен сигнал на завершение работы...')
@@ -31,8 +70,9 @@ def signal_handler(sig, frame):
         logger.error(f'❌ Ошибка при завершении работы бота: {e}')
     
     finally:
-        # Сохраняем данные перед выходом
+        # Сохраняем данные и удаляем PID файл перед выходом
         save_user_data()
+        remove_pid_file()
         logger.info('👋 Бот завершает работу')
         sys.exit(0)
 
@@ -47,6 +87,30 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+# ==================== СОСТОЯНИЕ ПОЛЬЗОВАТЕЛЕЙ ====================
+user_states = {}
+teaching_mode = {}
+
+def get_user_menu(user_id):
+    """Получает текущее меню пользователя"""
+    return user_states.get(user_id, 'main')
+
+def set_user_menu(user_id, menu_key):
+    """Устанавливает текущее меню пользователя"""
+    user_states[user_id] = menu_key
+
+def is_author(user):
+    """Проверка, является ли пользователь автором"""
+    return user.username == AUTHOR_USERNAME
+
+def is_teaching_mode(user_id):
+    """Проверка, находится ли пользователь в режиме обучения"""
+    return teaching_mode.get(user_id, False)
+
+def set_teaching_mode(user_id, mode):
+    """Установка режима обучения"""
+    teaching_mode[user_id] = mode
 
 # ==================== КЛАВИАТУРЫ ====================
 def create_device_keyboard():
@@ -67,6 +131,39 @@ def create_motivation_keyboard():
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add('Только знакомлюсь', 'Готов изучать')
     keyboard.add('Очень настроен', 'Уже работаю над собой')
+    return keyboard
+
+def create_menu(menu_key='main'):
+    """Создает клавиатуру для указанного меню"""
+    if menu_key not in MENU_STRUCTURE:
+        menu_key = 'main'
+    
+    menu = MENU_STRUCTURE[menu_key]
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    
+    # Разбиваем кнопки на ряды по 2 кнопки
+    buttons = menu['buttons']
+    for i in range(0, len(buttons), 2):
+        if i + 1 < len(buttons):
+            keyboard.add(buttons[i], buttons[i + 1])
+        else:
+            keyboard.add(buttons[i])
+    
+    return keyboard, menu['title']
+
+def create_author_menu(menu_key='main'):
+    """Создает меню для автора с дополнительной кнопкой обучения"""
+    keyboard, title = create_menu(menu_key)
+    if menu_key == 'main':
+        keyboard.add('🔧 Обучение')
+    return keyboard, title
+
+def create_teaching_keyboard():
+    """Создает клавиатуру для режима обучения"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add('📝 Показать базу знаний')
+    keyboard.add('❌ Выйти из режима обучения')
+    keyboard.add('🏠 Главное меню')
     return keyboard
 
 def clean_markdown(text):
@@ -916,31 +1013,143 @@ def should_initiate_data_collection(user_id, user_message):
     return not is_user_profile_complete(user_id)
 
 # ==================== ОБРАБОТЧИКИ СООБЩЕНИЙ ====================
-@bot.message_handler(commands=['start'])
-def handle_start(message):
-    """Обработчик команды /start"""
-    user = message.from_user
+# ==================== ОБРАБОТЧИКИ КОМАНД ====================
+@bot.message_handler(commands=['start', 'menu', 'меню'])
+def send_welcome(message):
+    """Приветственное сообщение с меню"""
+    user_id = message.from_user.id
+    set_user_menu(user_id, 'main')
+    set_teaching_mode(user_id, False)  # Выходим из режима обучения
     
-    # 🔥 ЯВНО ОТКЛЮЧАЕМ режим сбора данных при старте
-    set_data_collection_mode(user.id, False)
+    if is_author(message.from_user):
+        keyboard, title = create_author_menu('main')
+        welcome_text = """
+👋 Привет, Алексей! Вы в режиме автора системы Сеплица.
+
+Выберите раздел или нажмите '🔧 Обучение' для коррекции знаний.
+        """
+    else:
+        keyboard, title = create_menu('main')
+        welcome_text = """
+👋 Добро пожаловать в «Сеплица-Эксперт»!
+
+Я — ваш AI-консультант по системе естественного омоложения.
+
+Выберите нужный раздел из меню ниже или просто задайте вопрос!
+        """
     
-    # Инициализация прогресса пользователя
-    init_user_progress(user.id)
+    bot.send_message(message.chat.id, welcome_text, reply_markup=keyboard)
+
+@bot.message_handler(commands=['teach', 'обучение'])
+def teach_command(message):
+    """Режим обучения для автора"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта команда доступна только автору системы.")
+        return
     
-    welcome_text = (
-        "🌟 **Добро пожаловать в систему СЕПЛИЦА!** 🌟\n\n"
-        "Я — ваш AI-консультант по естественному омоложению.\n\n"
-        "Система СЕПЛИЦА — это комплексный подход к естественному омоложению, "
-        "основанный на 4 ключевых ступенях:\n\n"
-        "1️⃣ СЦЕПЛЕНИЕ - работа с опорно-двигательным аппаратом\n"
-        "2️⃣ ЕСТЕСТВЕННОСТЬ - массажи и упражнения\n"
-        "3️⃣ ПИТАНИЕ - забота о микробиоме\n"
-        "4️⃣ БИОХАКИНГ - поддержка на клеточном уровне\n\n"
-        "Выберите интересующий вас раздел в меню 👇"
-    )
+    user_id = message.from_user.id
+    set_teaching_mode(user_id, True)
     
-    keyboard = create_menu('main')[0]
-    send_safe_message(message.chat.id, welcome_text, reply_markup=keyboard)
+    bot.send_message(message.chat.id,
+                    "🔧 **РЕЖИМ ОБУЧЕНИЯ АКТИВИРОВАН**\n\n"
+                    "Для добавления/коррекции знаний используйте формат:\n"
+                    "```\n"
+                    "ТЕМА: исправленный текст\n"
+                    "```\n\n"
+                    "Пример:\n"
+                    "`упражнения: Добавлены новые упражнения для шеи...`\n\n"
+                    "Доступные команды:\n"
+                    "• 'показать' - просмотр текущих знаний\n"
+                    "• 'выход' - выход из режима обучения\n"
+                    "• 'главное меню' - возврат в основное меню",
+                    reply_markup=create_teaching_keyboard(),
+                    parse_mode='Markdown')
+
+@bot.message_handler(func=lambda message: message.text == '🔧 Обучение')
+def teach_mode(message):
+    """Активация режима обучения через кнопку"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта функция доступна только автору системы.")
+        return
+    teach_command(message)
+
+@bot.message_handler(func=lambda message: message.text.lower() in ['показать', '📝 показать базу знаний'])
+def show_knowledge(message):
+    """Показать текущую базу знаний"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта команда доступна только автору системы.")
+        return
+    
+    knowledge = load_knowledge()
+    if not knowledge:
+        bot.send_message(message.chat.id, "📝 База знаний пуста.", reply_markup=create_teaching_keyboard())
+        return
+    
+    response = "📚 **ТЕКУЩИЕ ЗНАНИЯ СИСТЕМЫ:**\n\n"
+    for key, value in knowledge.items():
+        response += f"**{key}:**\n{value}\n\n"
+    
+    if len(response) > 4000:
+        # Если текст слишком длинный, разбиваем на части
+        parts = [response[i:i+4000] for i in range(0, len(response), 4000)]
+        for part in parts:
+            send_safe_message(message.chat.id, part, reply_markup=create_teaching_keyboard())
+    else:
+        send_safe_message(message.chat.id, response, reply_markup=create_teaching_keyboard())
+
+@bot.message_handler(func=lambda message: message.text.lower() in ['выход', '❌ выйти из режима обучения', 'отмена', 'стоп'])
+def exit_teaching_mode(message):
+    """Выход из режима обучения"""
+    user_id = message.from_user.id
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта команда доступна только автору системы.")
+        return
+    
+    set_teaching_mode(user_id, False)
+    keyboard, title = create_author_menu('main')
+    
+    bot.send_message(message.chat.id, 
+                    "✅ **Режим обучения завершен**\n\n"
+                    "Вы вернулись в обычный режим работы.",
+                    reply_markup=keyboard,
+                    parse_mode='Markdown')
+
+@bot.message_handler(func=lambda message: ':' in message.text and is_author(message.from_user) and is_teaching_mode(message.from_user.id))
+def process_teaching(message):
+    """Обработка добавления знаний в системе в режиме обучения"""
+    if not is_author(message.from_user):
+        return
+    
+    try:
+        parts = message.text.split(':', 1)
+        if len(parts) == 2:
+            topic = parts[0].strip()
+            knowledge_text = parts[1].strip()
+            
+            knowledge = load_knowledge()
+            knowledge[topic] = knowledge_text
+            if save_knowledge(knowledge):
+                logger.info(f"Знания обновлены: {topic}")
+                bot.send_message(message.chat.id, 
+                               f"✅ **Знания обновлены!**\n\n"
+                               f"**Тема:** {topic}\n"
+                               f"**Содержание:** {knowledge_text}\n\n"
+                               f"Продолжайте добавлять знания или нажмите '❌ Выйти из режима обучения'",
+                               reply_markup=create_teaching_keyboard(),
+                               parse_mode='Markdown')
+            else:
+                bot.send_message(message.chat.id, 
+                               "❌ Ошибка сохранения знаний",
+                               reply_markup=create_teaching_keyboard())
+        else:
+            bot.send_message(message.chat.id, 
+                           "❌ Неверный формат. Используйте:\n`ТЕМА: текст`",
+                           reply_markup=create_teaching_keyboard())
+    except Exception as e:
+        logger.error(f"Ошибка обучения: {e}")
+        bot.send_message(message.chat.id, 
+                       f"❌ Ошибка: {e}",
+                       reply_markup=create_teaching_keyboard())
 
 @bot.message_handler(commands=['menu'])
 def handle_menu_command(message):
@@ -1159,41 +1368,52 @@ def handle_rank_command(message):
 def ensure_clean_start():
     """Проверяет и очищает предыдущие вебхуки"""
     try:
+        # Проверяем, нет ли уже запущенного экземпляра
+        if check_running_instance():
+            return False
+            
+        # Создаем PID файл
+        if not create_pid_file():
+            return False
+            
         # Удаляем старый вебхук
         bot.remove_webhook()
         logger.info("✅ Вебхук удален")
         
-        # Очищаем очередь обновлений
-        updates = bot.get_updates(offset=-1, timeout=1)
-        if updates:
-            last_update_id = updates[-1].update_id
-            bot.get_updates(offset=last_update_id + 1)
-            logger.info("✅ Очередь обновлений очищена")
-            
+        # Принудительно очищаем все апдейты
+        bot.get_updates(offset=-1)
+        logger.info("✅ Очередь обновлений очищена")
+        
         return True
         
     except Exception as e:
         logger.error(f"❌ Ошибка при очистке состояния бота: {e}")
+        remove_pid_file()  # Удаляем PID файл в случае ошибки
         return False
 
 if __name__ == "__main__":
-    # Загружаем данные при запуске
-    load_user_data()
-    knowledge = load_knowledge()
-    
-    if knowledge:
-        logger.info(f"✅ База знаний загружена: {len(knowledge)} записей")
-    else:
-        logger.warning("❌ База знаний пуста или не загружена")
-    
-    # Проверяем и очищаем состояние бота
-    if ensure_clean_start():
-        try:
+    try:
+        # Загружаем данные при запуске
+        load_user_data()
+        knowledge = load_knowledge()
+        
+        if knowledge:
+            logger.info(f"✅ База знаний загружена: {len(knowledge)} записей")
+        else:
+            logger.warning("❌ База знаний пуста или не загружена")
+        
+        # Проверяем и очищаем состояние бота
+        if ensure_clean_start():
             logger.info("🚀 Запуск бота Сеплица...")
-            bot.polling(none_stop=True, interval=0)
-        except Exception as e:
-            logger.error(f"❌ Ошибка в работе бота: {e}")
-            # Пытаемся корректно завершить работу
-            signal_handler(signal.SIGTERM, None)
-    else:
-        logger.error("❌ Не удалось запустить бота из-за ошибок инициализации")
+            bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        else:
+            logger.error("❌ Не удалось запустить бота из-за ошибок инициализации")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        logger.info("🛑 Получен сигнал прерывания...")
+        signal_handler(signal.SIGINT, None)
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
+        signal_handler(signal.SIGTERM, None)
