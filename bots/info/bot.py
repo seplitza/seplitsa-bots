@@ -79,10 +79,6 @@ USER_DATA_FILE = "seplitsa_info_user_data.json"
 GOOGLE_SHEETS_CREDENTIALS = "seplitsa-credentials.json"  # Файл с ключами API
 GOOGLE_SHEET_NAME = "Сеплица - База подписчиков"
 
-# ==================== НАСТРОЙКА ЛОГИРОВАНИЯ ====================
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # ==================== ЗВАНИЯ И ТРЕБОВАНИЯ ====================
 USER_RANKS = {
     'novice': '👶 Новичок',
@@ -116,63 +112,102 @@ def is_user_profile_complete(user_id):
 
 def collect_user_data_step_by_step(user_id, answer):
     """Пошаговый сбор данных пользователя"""
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    
-    profile = user_data[user_id]
-    
-    # Определяем текущий шаг на основе заполненных полей
-    if 'name' not in profile:
-        profile['name'] = answer
-        return "👋 Приятно познакомиться! Сколько вам лет?", None
-    
-    elif 'age' not in profile:
-        try:
-            age = int(answer)
-            if age < 18 or age > 100:
-                return "🤔 Пожалуйста, введите корректный возраст (18-100):", None
-            profile['age'] = age
-            return "🌍 В каком городе вы живете?", None
-        except ValueError:
-            return "🤔 Пожалуйста, введите возраст цифрами:", None
-    
-    elif 'city' not in profile:
-        profile['city'] = answer
-        return "📱 Какое у вас устройство?", create_device_keyboard()
-    
-    elif 'device' not in profile:
-        if answer not in ['iPhone', 'Android']:
-            return "📱 Пожалуйста, выберите устройство из предложенных:", create_device_keyboard()
-        profile['device'] = answer
-        return "💰 Как бы вы оценили свое финансовое положение?", create_financial_keyboard()
-    
-    elif 'financial' not in profile:
-        if answer not in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен']:
-            return "💰 Пожалуйста, выберите из предложенных вариантов:", create_financial_keyboard()
-        profile['financial'] = answer
-        return "🎯 Насколько вы настроены на работу над собой?", create_motivation_keyboard()
-    
-    elif 'motivation' not in profile:
-        if answer not in ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой']:
-            return "🎯 Пожалуйста, выберите из предложенных вариантов:", create_motivation_keyboard()
-        profile['motivation'] = answer
-        profile['data_collected'] = True
-        save_user_data()
+    try:
+        if user_id not in user_data:
+            user_data[user_id] = {'step': 'name'}
         
-        # Завершаем сбор данных
-        set_data_collection_mode(user_id, False)
+        profile = user_data[user_id]
+        current_step = profile.get('step', 'name')
         
-        # Создаем соответствующее меню
-        keyboard = create_menu('main')[0]
+        # Словарь валидации для каждого шага
+        step_validation = {
+            'name': {
+                'validate': lambda x: len(x.strip()) >= 2,
+                'error': "🤔 Пожалуйста, введите корректное имя (минимум 2 символа):",
+                'next': 'age',
+                'success': lambda x: x.strip(),
+                'next_message': "👋 Приятно познакомиться! Сколько вам лет?"
+            },
+            'age': {
+                'validate': lambda x: x.isdigit() and 18 <= int(x) <= 100,
+                'error': "🤔 Пожалуйста, введите корректный возраст (18-100):",
+                'next': 'city',
+                'success': lambda x: int(x),
+                'next_message': "🌍 В каком городе вы живете?"
+            },
+            'city': {
+                'validate': lambda x: len(x.strip()) >= 2,
+                'error': "🤔 Пожалуйста, введите корректное название города:",
+                'next': 'device',
+                'success': lambda x: x.strip(),
+                'next_message': "📱 Какое у вас устройство?",
+                'keyboard': create_device_keyboard
+            },
+            'device': {
+                'validate': lambda x: x in ['iPhone', 'Android'],
+                'error': "📱 Пожалуйста, выберите устройство из предложенных:",
+                'next': 'financial',
+                'success': lambda x: x,
+                'next_message': "💰 Как бы вы оценили свое финансовое положение?",
+                'keyboard': create_financial_keyboard
+            },
+            'financial': {
+                'validate': lambda x: x in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен'],
+                'error': "💰 Пожалуйста, выберите из предложенных вариантов:",
+                'next': 'motivation',
+                'success': lambda x: x,
+                'next_message': "🎯 Насколько вы настроены на работу над собой?",
+                'keyboard': create_motivation_keyboard
+            },
+            'motivation': {
+                'validate': lambda x: x in ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой'],
+                'error': "🎯 Пожалуйста, выберите из предложенных вариантов:",
+                'next': 'complete',
+                'success': lambda x: x,
+                'keyboard': create_motivation_keyboard
+            }
+        }
         
-        return (
-            "✅ Отлично! Анкета заполнена.\n\n"
-            "🎯 Теперь я смогу давать вам более персонализированные рекомендации.\n\n"
-            "Добро пожаловать в систему СЕПЛИЦА!\n"
-            "Выберите интересующий вас раздел:", keyboard
-        )
-    
-    return None
+        # Если текущий шаг не найден в словаре валидации, начинаем сначала
+        if current_step not in step_validation:
+            profile['step'] = 'name'
+            return "Давайте начнем сначала. Как вас зовут?", None
+        
+        step = step_validation[current_step]
+        
+        # Проверяем валидность ответа
+        if not step['validate'](answer):
+            return step['error'], step.get('keyboard', lambda: None)()
+        
+        # Сохраняем ответ и обновляем шаг
+        profile[current_step] = step['success'](answer)
+        next_step = step['next']
+        
+        # Если это был последний шаг
+        if next_step == 'complete':
+            profile['data_collected'] = True
+            profile['step'] = 'complete'
+            save_user_data()
+            set_data_collection_mode(user_id, False)
+            
+            keyboard = create_menu('main')[0]
+            return (
+                "✅ Отлично! Анкета заполнена.\n\n"
+                "🎯 Теперь я смогу давать вам более персонализированные рекомендации.\n\n"
+                "Добро пожаловать в систему СЕПЛИЦА!\n"
+                "Выберите интересующий вас раздел:", keyboard
+            )
+        
+        # Переходим к следующему шагу
+        profile['step'] = next_step
+        save_user_data()  # Сохраняем после каждого шага
+        
+        next_keyboard = step_validation[next_step].get('keyboard', lambda: None)()
+        return step_validation[next_step]['next_message'], next_keyboard
+        
+    except Exception as e:
+        logger.error(f"Ошибка в сборе данных: {e}")
+        return "Произошла ошибка. Пожалуйста, попробуйте еще раз или обратитесь к администратору.", None
 
 # ==================== ПРОМПТ СЕПЛИЦА ====================
 SEPLITSA_SYSTEM_PROMPT = """
@@ -581,150 +616,9 @@ def save_to_google_sheets(user_info):
         logger.error(f"❌ Ошибка сохранения в Google Sheets: {e}")
         return False
 
-def collect_user_data_step_by_step(user_id, message_text):
-    """Пошаговый сбор данных пользователя"""
-    if user_id not in user_data:
-        user_data[user_id] = {
-            'user_id': user_id,
-            'registration_date': datetime.now().isoformat(),
-            'current_step': 0
-        }
-    
-    current_step = user_data[user_id].get('current_step', 0)
-    
-    if current_step == 0:
-        # Шаг 1: Имя
-        user_data[user_id]['first_name'] = message_text
-        user_data[user_id]['current_step'] = 1
-        return "📝 Отлично! А сколько вам лет?"
-    
-    elif current_step == 1:
-        # Шаг 2: Возраст
-        if message_text.isdigit() and 10 <= int(message_text) <= 100:
-            user_data[user_id]['age'] = message_text
-            user_data[user_id]['current_step'] = 2
-            return "👤 Выберите ваш пол:", create_gender_keyboard()
-        else:
-            return "📝 Пожалуйста, введите корректный возраст (число от 10 до 100):"
-    
-    elif current_step == 2:
-        # Шаг 3: Пол
-        if message_text in ['Мужской', 'Женский']:
-            user_data[user_id]['gender'] = message_text
-            user_data[user_id]['current_step'] = 3
-            return "🏋️ Вы ходите в спортзал?", create_gym_keyboard()
-        else:
-            return "👤 Пожалуйста, выберите пол из предложенных вариантов:"
-    
-    elif current_step == 3:
-        # Шаг 4: Посещение спортзала
-        if message_text in ['Да, регулярно', 'Да, иногда', 'Нет']:
-            user_data[user_id]['gym_attendance'] = message_text
-            
-            if message_text != 'Нет':
-                user_data[user_id]['current_step'] = 4
-                return "📅 Как часто вы ходите в спортзал?", create_gym_frequency_keyboard()
-            else:
-                user_data[user_id]['gym_frequency'] = 'Не хожу'
-                user_data[user_id]['current_step'] = 5
-                return "📱 Какой у вас тип телефона?", create_phone_keyboard()
-        else:
-            return "🏋️ Пожалуйста, выберите вариант из предложенных:"
-    
-    elif current_step == 4:
-        # Шаг 5: Частота посещения спортзала
-        if message_text in ['1-2 раза в неделю', '3-4 раза в неделю', '5+ раз в неделю']:
-            user_data[user_id]['gym_frequency'] = message_text
-            user_data[user_id]['current_step'] = 5
-            return "📱 Какой у вас тип телефона?", create_phone_keyboard()
-        else:
-            return "📅 Пожалуйста, выберите частоту из предложенных вариантов:"
-    
-    elif current_step == 5:
-        # Шаг 6: Тип телефона
-        if message_text in ['iPhone', 'Android']:
-            user_data[user_id]['phone_type'] = message_text
-            user_data[user_id]['current_step'] = 6
-            return "💎 Как бы вы описали свое финансовое положение?", create_financial_keyboard()
-        else:
-            return "📱 Пожалуйста, выберите тип телефона:"
-    
-    elif current_step == 6:
-        # Шаг 7: Финансовое положение
-        if message_text in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен']:
-            user_data[user_id]['financial_status'] = message_text
-            user_data[user_id]['current_step'] = 7
-            return "🎯 Насколько вы настроены на работу над собой?", create_motivation_keyboard()
-        else:
-            return "💎 Пожалуйста, выберите вариант из предложенных:"
-    
-    elif current_step == 7:
-        # Шаг 8: Настроенность на работу
-        if message_text in ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой']:
-            user_data[user_id]['motivation_level'] = message_text
-            user_data[user_id]['current_step'] = 8
-            
-            # Завершаем сбор данных
-            user_data[user_id]['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            user_data[user_id]['current_rank'] = get_user_rank(user_id)
-            
-            # Сохраняем в Google Sheets
-            save_to_google_sheets(user_data[user_id])
-            
-            # Отмечаем в прогрессе
-            user_progress[user_id]['data_collected'] = True
-            
-            set_data_collection_mode(user_id, False)
-            save_user_data()
-            
-            stats = get_user_progress_stats(user_id)
-            
-            return (f"✅ **Спасибо! Анкета завершена!**\n\n"
-                   f"Теперь вы официально в системе Сеплица!\n"
-                   f"Ваше текущее звание: **{stats['current_rank']}**\n\n"
-                   f"Изучайте систему, повышайте звание и достигайте результатов! 🎯")
-    
-    return None
-
-def create_gender_keyboard():
-    """Клавиатура для выбора пола"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('Мужской', 'Женский')
-    return keyboard
-
-def create_gym_keyboard():
-    """Клавиатура для вопроса о спортзале"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('Да, регулярно', 'Да, иногда')
-    keyboard.add('Нет')
-    return keyboard
-
-def create_gym_frequency_keyboard():
-    """Клавиатура для частоты посещения спортзала"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('1-2 раза в неделю', '3-4 раза в неделю')
-    keyboard.add('5+ раз в неделю')
-    return keyboard
-
-def create_phone_keyboard():
-    """Клавиатура для типа телефона"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('iPhone', 'Android')
-    return keyboard
-
-def create_financial_keyboard():
-    """Клавиатура для финансового положения"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('Экономлю', 'Стабильно')
-    keyboard.add('Могу позволить себе многое', 'Не ограничен')
-    return keyboard
-
-def create_motivation_keyboard():
-    """Клавиатура для настроенности на работу"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add('Только знакомлюсь', 'Готов изучать')
-    keyboard.add('Очень настроен', 'Уже работаю над собой')
-    return keyboard
+# Старые версии функций сбора данных и клавиатур были удалены.
+# Используется новая версия collect_user_data_step_by_step с валидацией через словарь
+# и стандартизированными клавиатурами.
 
 # ==================== ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений) ====================
 def normalize_key(key):
@@ -809,12 +703,12 @@ def create_menu(menu_key='main'):
     menu = MENU_STRUCTURE[menu_key]
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     
+    # Группируем кнопки по 2, безопасно обрабатывая последнюю группу
     buttons = menu['buttons']
-    for i in range(0, len(buttons), 2):
-        if i + 1 < len(buttons):
-            keyboard.add(buttons[i], buttons[i + 1])  # ✅ ИСПРАВЛЕНО
-        else:
-            keyboard.add(buttons[i])  # ✅ ИСПРАВЛЕНО
+    button_pairs = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    
+    for pair in button_pairs:
+        keyboard.add(*pair)  # add() автоматически обработает как одну, так и две кнопки
     
     return keyboard, menu['title']
 
@@ -1006,22 +900,22 @@ def handle_message(message):
     
     # 🔥 Проверяем, завершена ли анкета
     if not is_user_profile_complete(user_id):
-        # Показываем напоминание и меню
+        if message.text.startswith('/'):
+            # Позволяем использовать команды
+            if message.text == '/complete_profile':
+                handle_complete_profile(message)
+            elif message.text == '/start':
+                handle_start(message)
+            return
+        
+        # Показываем напоминание о необходимости заполнить анкету
         reminder_text = (
-            "📋 *Завершите регистрацию для полного доступа!*\n\n"
-            "Чтобы получить персонализированные рекомендации, завершите анкету:\n"
-            "`/complete_profile`\n\n"
-            "Но вы можете продолжить изучение системы! 🎯"
+            "📋 *Для доступа к функциям бота необходимо заполнить анкету*\n\n"
+            "Используйте команду /complete_profile чтобы начать регистрацию.\n"
+            "Это поможет мне давать более персонализированные рекомендации!"
         )
         send_safe_message(message.chat.id, reminder_text)
-        
-        # ВСЕГДА показываем меню, даже если анкета не завершена
-        if is_author(user):
-            keyboard, title = create_author_menu('main')
-        else:
-            keyboard, title = create_menu('main')
-        send_safe_message(message.chat.id, title, reply_markup=keyboard)
-        return
+        return  # Прекращаем обработку до завершения анкеты
     
     # Обработка команд автора
     if handle_author_command(message):
