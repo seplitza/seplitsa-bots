@@ -7,9 +7,38 @@ import time
 import re
 import hashlib
 import gspread
+import signal
+import sys
 from google.oauth2.service_account import Credentials
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
+
+# ==================== ОБРАБОТКА СИГНАЛОВ ====================
+def signal_handler(sig, frame):
+    """Обработчик сигналов для корректного завершения работы бота"""
+    logger.info('🛑 Получен сигнал на завершение работы...')
+    
+    try:
+        # Удаляем вебхук перед выходом
+        bot.remove_webhook()
+        logger.info('✅ Вебхук успешно удален')
+        
+        # Останавливаем поллинг
+        bot.stop_polling()
+        logger.info('✅ Поллинг остановлен')
+        
+    except Exception as e:
+        logger.error(f'❌ Ошибка при завершении работы бота: {e}')
+    
+    finally:
+        # Сохраняем данные перед выходом
+        save_user_data()
+        logger.info('👋 Бот завершает работу')
+        sys.exit(0)
+
+# Регистрируем обработчики сигналов
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # ==================== НАСТРОЙКА ЛОГИРОВАНИЯ ====================
 logging.basicConfig(
@@ -1127,23 +1156,44 @@ def handle_rank_command(message):
     send_safe_message(message.chat.id, rank_text)
 
 # ==================== ЗАПУСК БОТА ====================
+def ensure_clean_start():
+    """Проверяет и очищает предыдущие вебхуки"""
+    try:
+        # Удаляем старый вебхук
+        bot.remove_webhook()
+        logger.info("✅ Вебхук удален")
+        
+        # Очищаем очередь обновлений
+        updates = bot.get_updates(offset=-1, timeout=1)
+        if updates:
+            last_update_id = updates[-1].update_id
+            bot.get_updates(offset=last_update_id + 1)
+            logger.info("✅ Очередь обновлений очищена")
+            
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка при очистке состояния бота: {e}")
+        return False
+
 if __name__ == "__main__":
-    logger.info("🚀 Запуск бота Сеплица...")
-    
-    # Загружаем данные пользователей
+    # Загружаем данные при запуске
     load_user_data()
-    
-    # Проверяем наличие базы знаний
     knowledge = load_knowledge()
+    
     if knowledge:
         logger.info(f"✅ База знаний загружена: {len(knowledge)} записей")
     else:
         logger.warning("❌ База знаний пуста или не загружена")
     
-    logger.info("✅ Бот готов к работе!")
-    
-    try:
-        bot.polling(none_stop=True, interval=0)
-    except Exception as e:
-        logger.error(f"❌ Ошибка запуска бота: {e}")
-        time.sleep(5)
+    # Проверяем и очищаем состояние бота
+    if ensure_clean_start():
+        try:
+            logger.info("🚀 Запуск бота Сеплица...")
+            bot.polling(none_stop=True, interval=0)
+        except Exception as e:
+            logger.error(f"❌ Ошибка в работе бота: {e}")
+            # Пытаемся корректно завершить работу
+            signal_handler(signal.SIGTERM, None)
+    else:
+        logger.error("❌ Не удалось запустить бота из-за ошибок инициализации")
