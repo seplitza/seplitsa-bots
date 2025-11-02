@@ -432,7 +432,22 @@ def load_user_data():
             with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 user_data = data.get('user_data', {})
-                user_progress = data.get('user_progress', {})
+                
+                # 🔥 ПРЕОБРАЗУЕМ списки обратно в множества
+                loaded_progress = data.get('user_progress', {})
+                user_progress = {}
+                
+                for user_id, progress in loaded_progress.items():
+                    user_progress[user_id] = {
+                        'menus_visited': set(progress.get('menus_visited', [])),
+                        'topics_read': set(progress.get('topics_read', [])),
+                        'details_clicks': progress.get('details_clicks', 0),
+                        'messages_scrolled': set(progress.get('messages_scrolled', [])),
+                        'current_rank': progress.get('current_rank', 'novice'),
+                        'registration_date': progress.get('registration_date'),
+                        'data_collected': progress.get('data_collected', False)
+                    }
+                
                 logger.info(f"✅ Данные пользователей загружены: {len(user_data)} пользователей")
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки данных пользователей: {e}")
@@ -442,10 +457,24 @@ def load_user_data():
 def save_user_data():
     """Сохранение данных пользователей"""
     try:
+        # 🔥 ПРЕОБРАЗУЕМ множества в списки для JSON-сериализации
+        serializable_progress = {}
+        for user_id, progress in user_progress.items():
+            serializable_progress[user_id] = {
+                'menus_visited': list(progress.get('menus_visited', set())),
+                'topics_read': list(progress.get('topics_read', set())),
+                'details_clicks': progress.get('details_clicks', 0),
+                'messages_scrolled': list(progress.get('messages_scrolled', set())),
+                'current_rank': progress.get('current_rank', 'novice'),
+                'registration_date': progress.get('registration_date'),
+                'data_collected': progress.get('data_collected', False)
+            }
+        
         data = {
             'user_data': user_data,
-            'user_progress': user_progress
+            'user_progress': serializable_progress
         }
+        
         with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         logger.info("✅ Данные пользователей сохранены")
@@ -863,11 +892,11 @@ def handle_start(message):
     """Обработчик команды /start"""
     user = message.from_user
     
+    # 🔥 ЯВНО ОТКЛЮЧАЕМ режим сбора данных при старте
+    set_data_collection_mode(user.id, False)
+    
     # Инициализация прогресса пользователя
     init_user_progress(user.id)
-    
-    # 🔥 НЕ начинаем сбор данных автоматически!
-    # Просто показываем приветствие и меню
     
     welcome_text = (
         "🌟 **Добро пожаловать в систему СЕПЛИЦА!** 🌟\n\n"
