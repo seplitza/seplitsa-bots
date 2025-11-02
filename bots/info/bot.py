@@ -192,10 +192,12 @@ def collect_user_data_step_by_step(user_id, answer):
             
             completion_text = (
                 "✅ Отлично! Анкета заполнена.\n\n"
-                "🎯 Теперь я смогу давать вам более персонализированные рекомендации."
+                "🎯 Теперь я смогу давать вам более персонализированные рекомендации.\n\n"
+                "💡 Вы всегда можете продолжить изучение системы через меню!"
             )
             
-            return completion_text
+            keyboard = create_menu('main')[0]
+            return completion_text, keyboard
         
         # Переходим к следующему шагу
         profile['step'] = next_step
@@ -826,6 +828,7 @@ def handle_author_command(message):
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def should_initiate_data_collection(user_id, user_message):
     """Определяет, нужно ли инициировать сбор данных ТОЛЬКО при запросе к AI"""
+    
     # 🔥 НИКОГДА не прерываем меню и команды
     if any(user_message in menu['buttons'] for menu in MENU_STRUCTURE.values()):
         return False
@@ -844,10 +847,14 @@ def should_initiate_data_collection(user_id, user_message):
     if find_knowledge_by_key(user_message):
         return False
     
+    # 🔥 Не собираем данные для коротких/случайных сообщений
+    if len(user_message.strip()) < 3:
+        return False
+    
     # 🔥 Собираем данные ТОЛЬКО если:
     # 1. Профиль не заполнен
     # 2. Нужно использовать AI (нет в базе знаний)
-    # 3. Пользователь задал произвольный вопрос
+    # 3. Пользователь задал осмысленный вопрос
     return not is_user_profile_complete(user_id)
 
 # ==================== ОБРАБОТЧИКИ СООБЩЕНИЙ ====================
@@ -877,6 +884,12 @@ def handle_start(message):
     keyboard = create_menu('main')[0]
     send_safe_message(message.chat.id, welcome_text, reply_markup=keyboard)
 
+@bot.message_handler(commands=['menu'])
+def handle_menu_command(message):
+    """Показывает главное меню"""
+    keyboard = create_menu('main')[0]
+    send_safe_message(message.chat.id, "🏠 Главное меню:", reply_markup=keyboard)
+
 @bot.message_handler(commands=['fill_profile'])
 def handle_fill_profile(message):
     """Команда для принудительного заполнения анкеты"""
@@ -896,12 +909,14 @@ def handle_data_collection(message):
     """Обработчик сбора данных пользователя"""
     user_id = message.from_user.id
     
-    # Если это команда меню или навигации, пропускаем сбор данных и переходим к обработке команды
-    if message.text in MENU_STRUCTURE.get('main', {}).get('buttons', []) or \
+    # Если это команда меню, навигации или системная команда - прерываем сбор данных
+    if message.text.startswith('/') or \
        message.text in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'] or \
-       message.text.startswith('/'):
+       any(message.text in menu['buttons'] for menu in MENU_STRUCTURE.values()):
+        # Отключаем режим сбора данных
         set_data_collection_mode(user_id, False)
-        handle_message(message)  # Передаем управление основному обработчику
+        # Передаем управление основному обработчику
+        handle_message(message)
         return
     
     response = collect_user_data_step_by_step(user_id, message.text)
@@ -935,16 +950,25 @@ def handle_message(message):
 
     # 3. Обработка навигации по меню
     current_menu = 'main'
+    menu_changed = False
+    
+    # Проверяем, является ли сообщение пунктом меню
     for menu_key, menu_data in MENU_STRUCTURE.items():
         if user_message in menu_data['buttons']:
             current_menu = menu_key
+            menu_changed = True
             break
 
     if user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ']:
         current_menu = 'main'
+        menu_changed = True
 
-    if current_menu != 'main':
+    if menu_changed:
         update_user_progress(user.id, 'menu_visited', current_menu)
+        # Показываем меню сразу для навигации
+        keyboard, title = create_menu(current_menu)
+        send_safe_message(message.chat.id, title, reply_markup=keyboard)
+        return
 
     # 4. Поиск в базе знаний
     knowledge = find_knowledge_by_key(user_message)
