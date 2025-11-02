@@ -4,14 +4,22 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/home/ubuntu/seplitsa-info-bot
-Environment=PATH=/home/ubuntu/seplitsa-info-bot/venv/bin
-ExecStart=/home/ubuntu/seplitsa-info-bot/venv/bin/python /home/ubuntu/seplitsa-info-bot/seplitza-info-bot1.py
+User=seplitsa
+Group=seplitsa
+WorkingDirectory=/home/seplitsa/seplitsa-bots/bots/info
+Environment=PATH=/home/seplitsa/seplitsa-bots/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/seplitsa/seplitsa-bots/venv/bin/python bot.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+
+# Ограничения безопасности
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+MemoryLimit=500M
 
 [Install]
 WantedBy=multi-user.target
