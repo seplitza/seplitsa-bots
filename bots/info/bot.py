@@ -19,6 +19,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ==================== КЛАВИАТУРЫ ====================
+def create_device_keyboard():
+    """Создает клавиатуру выбора устройства"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add('iPhone', 'Android')
+    return keyboard
+
+def create_financial_keyboard():
+    """Создает клавиатуру для финансового положения"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add('Экономлю', 'Стабильно')
+    keyboard.add('Могу позволить себе многое', 'Не ограничен')
+    return keyboard
+
+def create_motivation_keyboard():
+    """Создает клавиатуру для мотивации"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add('Только знакомлюсь', 'Готов изучать')
+    keyboard.add('Очень настроен', 'Уже работаю над собой')
+    return keyboard
+
 def clean_markdown(text):
     """Очищает текст от некорректных Markdown-символов"""
     if not text:
@@ -62,6 +83,96 @@ GOOGLE_SHEET_NAME = "Сеплица - База подписчиков"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ==================== ЗВАНИЯ И ТРЕБОВАНИЯ ====================
+USER_RANKS = {
+    'novice': '👶 Новичок',
+    'knowledgeable': '📚 Знаток',
+    'expert': '🎓 Эксперт'
+}
+
+RANK_REQUIREMENTS = {
+    'knowledgeable': {
+        'menus_visited': 3,
+        'topics_read': 5,
+        'details_clicks': 3
+    },
+    'expert': {
+        'menus_visited': 6,
+        'topics_read': 10,
+        'details_clicks': 6
+    }
+}
+
+# ==================== СИСТЕМА СБОРА ДАННЫХ ====================
+def is_user_profile_complete(user_id):
+    """Проверяет, завершена ли анкета пользователя"""
+    if user_id not in user_data:
+        return False
+    
+    required_fields = ['name', 'age', 'city', 'device', 'financial', 'motivation']
+    user_profile = user_data[user_id]
+    
+    return all(field in user_profile for field in required_fields)
+
+def collect_user_data_step_by_step(user_id, answer):
+    """Пошаговый сбор данных пользователя"""
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    
+    profile = user_data[user_id]
+    
+    # Определяем текущий шаг на основе заполненных полей
+    if 'name' not in profile:
+        profile['name'] = answer
+        return "👋 Приятно познакомиться! Сколько вам лет?", None
+    
+    elif 'age' not in profile:
+        try:
+            age = int(answer)
+            if age < 18 or age > 100:
+                return "🤔 Пожалуйста, введите корректный возраст (18-100):", None
+            profile['age'] = age
+            return "🌍 В каком городе вы живете?", None
+        except ValueError:
+            return "🤔 Пожалуйста, введите возраст цифрами:", None
+    
+    elif 'city' not in profile:
+        profile['city'] = answer
+        return "📱 Какое у вас устройство?", create_device_keyboard()
+    
+    elif 'device' not in profile:
+        if answer not in ['iPhone', 'Android']:
+            return "📱 Пожалуйста, выберите устройство из предложенных:", create_device_keyboard()
+        profile['device'] = answer
+        return "💰 Как бы вы оценили свое финансовое положение?", create_financial_keyboard()
+    
+    elif 'financial' not in profile:
+        if answer not in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен']:
+            return "💰 Пожалуйста, выберите из предложенных вариантов:", create_financial_keyboard()
+        profile['financial'] = answer
+        return "🎯 Насколько вы настроены на работу над собой?", create_motivation_keyboard()
+    
+    elif 'motivation' not in profile:
+        if answer not in ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой']:
+            return "🎯 Пожалуйста, выберите из предложенных вариантов:", create_motivation_keyboard()
+        profile['motivation'] = answer
+        profile['data_collected'] = True
+        save_user_data()
+        
+        # Завершаем сбор данных
+        set_data_collection_mode(user_id, False)
+        
+        # Создаем соответствующее меню
+        keyboard = create_menu('main')[0]
+        
+        return (
+            "✅ Отлично! Анкета заполнена.\n\n"
+            "🎯 Теперь я смогу давать вам более персонализированные рекомендации.\n\n"
+            "Добро пожаловать в систему СЕПЛИЦА!\n"
+            "Выберите интересующий вас раздел:", keyboard
+        )
+    
+    return None
 
 # ==================== ПРОМПТ СЕПЛИЦА ====================
 SEPLITSA_SYSTEM_PROMPT = """
