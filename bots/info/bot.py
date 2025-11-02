@@ -701,9 +701,9 @@ def create_menu(menu_key='main'):
     buttons = menu['buttons']
     for i in range(0, len(buttons), 2):
         if i + 1 < len(buttons):
-            keyboard.add(buttons[i], buttons[i + 1])
+            keyboard.add(buttons[i], buttons[i + 1])  # ✅ ИСПРАВЛЕНО
         else:
-            keyboard.add(buttons[i])
+            keyboard.add(buttons[i])  # ✅ ИСПРАВЛЕНО
     
     return keyboard, menu['title']
 
