@@ -71,8 +71,16 @@ def remove_pid_file():
 def check_running_instance():
     """Проверяет, запущен ли уже бот"""
     try:
-        if os.path.exists('bot.pid'):
-            with open('bot.pid', 'r') as f:
+        # Проверяем стандартные места для PID: сначала явный DEFAULT_PID_FILE, затем старый 'bot.pid'
+        candidate_paths = [DEFAULT_PID_FILE, 'bot.pid']
+        existing = None
+        for p in candidate_paths:
+            if os.path.exists(p):
+                existing = p
+                break
+
+        if existing:
+            with open(existing, 'r') as f:
                 old_pid = int(f.read().strip())
             # Проверяем, существует ли процесс
             try:
