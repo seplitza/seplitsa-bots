@@ -14,21 +14,48 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from datetime import datetime
 
 # ==================== УПРАВЛЕНИЕ ПРОЦЕССОМ ====================
-def create_pid_file():
-    """Создает PID файл"""
+PID_FILE_CANDIDATES = [
+    '/run/seplitsa-info-bot.pid',
+    '/var/run/seplitsa-info-bot.pid',
+    '/tmp/seplitsa-info-bot.pid',
+    'bot.pid'
+]
+
+def _write_pid(path):
     try:
         pid = str(os.getpid())
-        with open('bot.pid', 'w') as f:
+        with open(path, 'w') as f:
             f.write(pid)
         return True
     except Exception as e:
-        logger.error(f"❌ Ошибка создания PID файла: {e}")
+        logger.debug(f"Не удалось записать PID в {path}: {e}")
         return False
 
+def create_pid_file():
+    """Создает PID файл в первом доступном месте из списка кандидатов"""
+    for p in PID_FILE_CANDIDATES:
+        if _write_pid(p):
+            logger.info(f"✅ PID файл создан: {p}")
+            global PID_PATH
+            PID_PATH = p
+            return True
+    logger.error("❌ Не удалось создать PID файл ни в одном из путей")
+    return False
+
 def remove_pid_file():
-    """Удаляет PID файл"""
+    """Удаляет PID файл, если он существует"""
     try:
-        os.remove('bot.pid')
+        if 'PID_PATH' in globals() and os.path.exists(PID_PATH):
+            os.remove(PID_PATH)
+            return True
+        # Попытка удалить по всем кандидатам
+        for p in PID_FILE_CANDIDATES:
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+                    return True
+            except Exception:
+                continue
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка удаления PID файла: {e}")
