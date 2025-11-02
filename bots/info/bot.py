@@ -825,25 +825,29 @@ def handle_author_command(message):
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def should_initiate_data_collection(user_id, user_message):
-    """Определяет, нужно ли инициировать сбор данных"""
-    # Не прерываем навигацию по меню
+    """Определяет, нужно ли инициировать сбор данных ТОЛЬКО при запросе к AI"""
+    # 🔥 НИКОГДА не прерываем меню и команды
     if any(user_message in menu['buttons'] for menu in MENU_STRUCTURE.values()):
         return False
     
-    # Не прерываем команды
     if user_message.startswith('/'):
         return False
     
-    # Проверяем, не собираем ли уже данные
+    if user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ']:
+        return False
+    
+    # 🔥 Не собираем данные, если уже в процессе
     if is_data_collection_mode(user_id):
         return False
     
-    # Проверяем, есть ли ответ в базе знаний
+    # 🔥 Не собираем данные, если есть ответ в базе знаний
     if find_knowledge_by_key(user_message):
         return False
-        
-    # Инициируем сбор данных только если профиль не заполнен
-    # и нужно использовать AI (нет ответа в базе знаний)
+    
+    # 🔥 Собираем данные ТОЛЬКО если:
+    # 1. Профиль не заполнен
+    # 2. Нужно использовать AI (нет в базе знаний)
+    # 3. Пользователь задал произвольный вопрос
     return not is_user_profile_complete(user_id)
 
 # ==================== ОБРАБОТЧИКИ СООБЩЕНИЙ ====================
@@ -855,7 +859,9 @@ def handle_start(message):
     # Инициализация прогресса пользователя
     init_user_progress(user.id)
     
-    # Показываем приветствие и главное меню
+    # 🔥 НЕ начинаем сбор данных автоматически!
+    # Просто показываем приветствие и меню
+    
     welcome_text = (
         "🌟 **Добро пожаловать в систему СЕПЛИЦА!** 🌟\n\n"
         "Я — ваш AI-консультант по естественному омоложению.\n\n"
@@ -871,24 +877,18 @@ def handle_start(message):
     keyboard = create_menu('main')[0]
     send_safe_message(message.chat.id, welcome_text, reply_markup=keyboard)
 
-@bot.message_handler(commands=['complete_profile'])
-def handle_complete_profile(message):
-    """Команда для завершения регистрации"""
+@bot.message_handler(commands=['fill_profile'])
+def handle_fill_profile(message):
+    """Команда для принудительного заполнения анкеты"""
     user_id = message.from_user.id
     
     if is_user_profile_complete(user_id):
-        send_safe_message(message.chat.id, "✅ Ваш профиль уже завершен!")
-        # Показываем главное меню
-        if is_author(message.from_user):
-            keyboard, title = create_author_menu('main')
-        else:
-            keyboard, title = create_menu('main')
-        send_safe_message(message.chat.id, title, reply_markup=keyboard)
+        send_safe_message(message.chat.id, "✅ Ваш профиль уже заполнен!")
         return
     
     set_data_collection_mode(user_id, True)
     send_safe_message(message.chat.id, 
-                     "📝 Давайте завершим вашу регистрацию!\n\n"
+                     "📝 Давайте заполним вашу анкету для персонализированных рекомендаций!\n\n"
                      "Как вас зовут?")
 
 @bot.message_handler(func=lambda message: is_data_collection_mode(message.from_user.id))
@@ -946,40 +946,42 @@ def handle_message(message):
     if current_menu != 'main':
         update_user_progress(user.id, 'menu_visited', current_menu)
 
-    # 4. Обработка деталей
-    if user_message.endswith('_details'):
-        topic = user_message[:-8]
-        update_user_progress(user.id, 'details_click')
-        user_message = topic
-
-    # 5. Поиск ответа и отправка
-    bot.send_chat_action(message.chat.id, 'typing')
-    response_text = None
-
+    # 4. Поиск в базе знаний
     knowledge = find_knowledge_by_key(user_message)
+    
     if knowledge:
+        # 🔥 Есть в базе - отвечаем сразу
         update_user_progress(user.id, 'topic_read', user_message)
-        response_text = knowledge
+        bot.send_chat_action(message.chat.id, 'typing')
+        
+        if len(knowledge) > 400:
+            short_response = knowledge[:400] + "..."
+            send_safe_message(message.chat.id, short_response, 
+                            reply_markup=create_details_button(user_message))
+        else:
+            send_safe_message(message.chat.id, knowledge)
+            
     else:
+        # 🔥 Нет в базе - проверяем нужно ли собирать данные
         if should_initiate_data_collection(user_id, user_message):
             set_data_collection_mode(user_id, True)
             send_safe_message(message.chat.id, 
                 "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n"
                 "📝 Как вас зовут?")
-            return  # 🔥 ВАЖНО: добавляем return здесь!
+            return
         
-        response_text = ask_deepseek(user_message)
-
-    # 6. Отправка ответа
-    if response_text:
-        if len(response_text) > 400:
-            short_response = response_text[:400] + "..."
+        # 🔥 Если данные уже собраны или пользователь не хочет их заполнять - используем AI
+        bot.send_chat_action(message.chat.id, 'typing')
+        ai_response = ask_deepseek(user_message)
+        
+        if len(ai_response) > 400:
+            short_response = ai_response[:400] + "..."
             send_safe_message(message.chat.id, short_response, 
                             reply_markup=create_details_button(user_message))
         else:
-            send_safe_message(message.chat.id, response_text)
+            send_safe_message(message.chat.id, ai_response)
 
-    # 7. Показ меню
+    # 5. Показ меню
     keyboard = create_menu(current_menu)[0]
     send_safe_message(message.chat.id, "Выберите интересующий вас раздел:", reply_markup=keyboard)
 
