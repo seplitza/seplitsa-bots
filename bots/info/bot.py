@@ -252,11 +252,14 @@ TELEGRAM_TOKEN = "7372636777:AAGZULVuDbnHh6GUE6atSNaReOEqdrK5LZg"
 DEEPSEEK_API_KEY = "sk-030c8e9fbbb642a0b2850318ffad64a1"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 AUTHOR_USERNAME = "alexpina76"
-KNOWLEDGE_FILE = "seplitsa_info_knowledge.json"
-USER_DATA_FILE = "seplitsa_info_user_data.json"
+# Data directory from environment or current directory
+DATA_DIR = os.getenv('SEPLITSA_DATA_DIR', '.')
+
+KNOWLEDGE_FILE = os.path.join(DATA_DIR, "seplitsa_info_knowledge.json")
+USER_DATA_FILE = os.path.join(DATA_DIR, "seplitsa_info_user_data.json")
 
 # Настройки Google Sheets
-GOOGLE_SHEETS_CREDENTIALS = "seplitsa-credentials.json"  # Файл с ключами API
+GOOGLE_SHEETS_CREDENTIALS = os.path.join(DATA_DIR, "seplitsa-credentials.json")  # Файл с ключами API
 GOOGLE_SHEET_NAME = "Сеплица - База подписчиков"
 
 # ==================== ЗВАНИЯ И ТРЕБОВАНИЯ ====================
