@@ -1210,6 +1210,11 @@ def process_teaching(message):
 @bot.message_handler(commands=['menu'])
 def handle_menu_command(message):
     """Показывает главное меню"""
+    user_id = message.from_user.id
+    # Выходим из режима сбора данных при переходе в меню
+    if is_data_collection_mode(user_id):
+        logger.info(f"Пользователь {user_id} вышел из режима сбора данных через команду /menu")
+        set_data_collection_mode(user_id, False)
     keyboard = create_menu('main')[0]
     send_safe_message(message.chat.id, "🏠 Главное меню:", reply_markup=keyboard)
 
