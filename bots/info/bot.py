@@ -8,6 +8,7 @@ import re
 import gspread
 import signal
 import sys
+import threading
 from google.oauth2.service_account import Credentials
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
@@ -902,8 +903,8 @@ def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
 
 # duplicate old create_menu removed; using the single KeyboardButton-based implementation above
 
-def ask_deepseek(user_message):
-    """Запрос к DeepSeek API с увеличенным таймаутом"""
+def ask_deepseek(user_message, chat_id=None):
+    """Запрос к DeepSeek API с увеличенным таймаутом и индикатором typing"""
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}"
@@ -921,14 +922,40 @@ def ask_deepseek(user_message):
     }
     
     try:
+        # Если указан chat_id, периодически отправляем typing индикатор
+        stop_typing = threading.Event()
+        
+        def send_typing_periodically():
+            """Отправляет typing каждые 4 секунды пока AI думает"""
+            while not stop_typing.is_set():
+                if chat_id:
+                    try:
+                        bot.send_chat_action(chat_id, 'typing')
+                    except:
+                        pass
+                time.sleep(4)  # Отправляем каждые 4 секунды (typing живет 5 секунд)
+        
+        # Запускаем поток для периодической отправки typing
+        if chat_id:
+            typing_thread = threading.Thread(target=send_typing_periodically, daemon=True)
+            typing_thread.start()
+        
         response = requests.post(DEEPSEEK_URL, headers=headers, json=data, timeout=60)
+        
+        # Останавливаем отправку typing
+        stop_typing.set()
+        
         response.raise_for_status()
         result = response.json()
         return result["choices"][0]["message"]["content"]
     except requests.exceptions.Timeout:
+        if 'stop_typing' in locals():
+            stop_typing.set()
         logger.error("Таймаут запроса к DeepSeek API")
         return "Извините, сервис временно недоступен. Пожалуйста, попробуйте позже."
     except Exception as e:
+        if 'stop_typing' in locals():
+            stop_typing.set()
         logger.error(f"Ошибка запроса к DeepSeek: {e}")
         return "Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз."
 
@@ -1246,15 +1273,19 @@ def handle_message(message):
         return
     
     # 6. Если не нашли в базе - используем AI (всегда полный ответ без кнопки)
+    logger.info(f"Используем AI для запроса: '{user_message}'")
+    
+    # ВАЖНО: Показываем индикатор "typing" чтобы пользователь видел что бот работает
+    bot.send_chat_action(message.chat.id, 'typing')
+    
+    # Проверяем, нужно ли собрать данные пока AI думает
     if should_initiate_data_collection(user_id, user_message):
-        logger.info(f"Инициируем сбор данных для пользователя {user_id}")
+        logger.info(f"⏳ Запускаем сбор данных во время ожидания AI для пользователя {user_id}")
         set_data_collection_mode(user_id, True)
         send_safe_message(message.chat.id, "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n📝 Как вас зовут?")
-        return
     
-    logger.info(f"Используем AI для запроса: '{user_message}'")
-    bot.send_chat_action(message.chat.id, 'typing')
-    ai_response = ask_deepseek(user_message)
+    # Вызываем AI (может занять время) - передаем chat_id для индикатора typing
+    ai_response = ask_deepseek(user_message, chat_id=message.chat.id)
     
     # AI всегда отправляет полный ответ сразу (как в expert bot)
     send_safe_message(message.chat.id, ai_response)
