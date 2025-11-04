@@ -296,6 +296,15 @@ def collect_user_data_step_by_step(user_id, answer):
         profile = user_data[user_id]
         current_step = profile.get('step', 'name')
         
+        # МИГРАЦИЯ: если пользователь застрял на старом шаге 'device', пропускаем его
+        if current_step == 'device':
+            logger.info(f"🔄 Миграция: пропускаем устаревший шаг 'device' для {user_id}")
+            current_step = 'financial'
+            profile['step'] = 'financial'
+            save_user_data()
+        
+        logger.info(f"📊 Сбор данных для {user_id}: текущий шаг='{current_step}', ответ='{answer}'")
+        
         # Словарь валидации для каждого шага
         step_validation = {
             'name': {
@@ -346,9 +355,11 @@ def collect_user_data_step_by_step(user_id, answer):
         
         # Проверяем валидность ответа
         if not step['validate'](answer):
+            logger.info(f"❌ Валидация не прошла для шага '{current_step}': ответ='{answer}'")
             return step['error'], step.get('keyboard', lambda: None)()
         
         # Сохраняем ответ и обновляем шаг
+        logger.info(f"✅ Валидация пройдена для шага '{current_step}': ответ='{answer}' → следующий шаг='{step['next']}'")
         profile[current_step] = step['success'](answer)
         next_step = step['next']
         
