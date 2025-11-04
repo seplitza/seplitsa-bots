@@ -875,18 +875,21 @@ def find_knowledge_by_key(key):
 def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
     """Безопасная отправка сообщения с автоматическим определением режима"""
     try:
+        # Для длинных текстов или текстов с большим количеством спецсимволов отключаем Markdown
         if len(text) > 3000 or text.count('*') > 50 or text.count('_') > 50:
             return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=None)
         else:
-            safe_text = safe_markdown_text(text)
-            return bot.send_message(chat_id, safe_text, reply_markup=reply_markup, parse_mode=parse_mode)
+            # Пробуем отправить с Markdown
+            return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
             
     except Exception as e:
-        logger.error(f"Ошибка отправки сообщения: {e}")
+        logger.error(f"Ошибка отправки сообщения с Markdown: {e}")
         try:
+            # Пробуем отправить без Markdown
             return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=None)
         except Exception as e2:
             logger.error(f"Ошибка отправки без Markdown: {e2}")
+            # Если и это не работает, разбиваем на части или очищаем
             if len(text) > 4000:
                 part1 = text[:4000]
                 part2 = text[4000:8000] if len(text) > 8000 else text[4000:]
@@ -894,7 +897,8 @@ def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
                 if part2:
                     return bot.send_message(chat_id, part2, reply_markup=reply_markup, parse_mode=None)
             else:
-                clean_text = re.sub(r'[*_`\[\]]', '', text)
+                # Удаляем все проблемные символы
+                clean_text = re.sub(r'[*_`\[\]\\]', '', text)
                 return bot.send_message(chat_id, clean_text, reply_markup=reply_markup, parse_mode=None)
 
 # duplicate old create_menu removed; using the single KeyboardButton-based implementation above
