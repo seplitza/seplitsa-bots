@@ -1219,59 +1219,60 @@ def handle_message(message):
     user_id = user.id
     user_message = message.text.strip()
     logger.info(f"Получено сообщение от {user_id}: '{user_message}'")
+    
     # 1. Проверка режима сбора данных - ПЕРВОЕ ДЕЛО
     if is_data_collection_mode(user_id):
         logger.info(f"Пользователь {user_id} в режиме сбора данных")
         handle_data_collection(message)
         return
+    
     # 2. Обработка команд автора
     if handle_author_command(message):
         return
-    # 3. Обработка навигации по меню - ПРОВЕРЯЕМ ДО поиска в базе
-    current_menu = 'main'
-    menu_changed = False
-    for menu_key, menu_data in MENU_STRUCTURE.items():
-        if user_message in menu_data['buttons']:
-            current_menu = menu_key
-            menu_changed = True
-            logger.info(f"Нажата кнопка меню: '{user_message}' -> '{current_menu}'")
-            break
-    if user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ']:
-        current_menu = 'main'
-        menu_changed = True
-        logger.info("Нажата кнопка возврата в главное меню")
-    if menu_changed:
-        update_user_progress(user.id, 'menu_visited', current_menu)
-        keyboard, title = create_menu(current_menu)
+    
+    # 3. Проверяем, является ли это кнопкой перехода в подменю (название меню из MENU_STRUCTURE)
+    if user_message in MENU_STRUCTURE and user_message != 'main':
+        logger.info(f"Переход в подменю: '{user_message}'")
+        update_user_progress(user.id, 'menu_visited', user_message)
+        keyboard, title = create_menu(user_message)
         send_safe_message(message.chat.id, title, reply_markup=keyboard)
         return
-    # 4. Поиск в базе знаний
+    
+    # 4. Проверяем кнопку возврата в главное меню
+    if user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ']:
+        logger.info("Нажата кнопка возврата в главное меню")
+        keyboard, title = create_menu('main')
+        send_safe_message(message.chat.id, title, reply_markup=keyboard)
+        return
+    
+    # 5. Поиск в базе знаний (для кнопок с темами и обычных вопросов)
     knowledge = find_knowledge_by_key(user_message)
     if knowledge:
         logger.info(f"Найден ответ в базе знаний для: '{user_message}'")
         update_user_progress(user.id, 'topic_read', user_message)
         bot.send_chat_action(message.chat.id, 'typing')
+        
+        # Всегда показываем короткий ответ с кнопкой "Подробнее" для базы знаний
         if len(knowledge) > 400:
             short_response = knowledge[:400] + "..."
             send_safe_message(message.chat.id, short_response, reply_markup=create_details_button(user_message))
         else:
             send_safe_message(message.chat.id, knowledge)
-    else:
-        if should_initiate_data_collection(user_id, user_message):
-            logger.info(f"Инициируем сбор данных для пользователя {user_id}")
-            set_data_collection_mode(user_id, True)
-            send_safe_message(message.chat.id, "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n📝 Как вас зовут?")
-            return
-        logger.info(f"Используем AI для запроса: '{user_message}'")
-        bot.send_chat_action(message.chat.id, 'typing')
-        ai_response = ask_deepseek(user_message)
-        if len(ai_response) > 400:
-            short_response = ai_response[:400] + "..."
-            send_safe_message(message.chat.id, short_response, reply_markup=create_details_button(user_message))
-        else:
-            send_safe_message(message.chat.id, ai_response)
-    keyboard = create_menu('main')[0]
-    send_safe_message(message.chat.id, "Выберите интересующий вас раздел:", reply_markup=keyboard)
+        return
+    
+    # 6. Если не нашли в базе - используем AI (всегда полный ответ без кнопки)
+    if should_initiate_data_collection(user_id, user_message):
+        logger.info(f"Инициируем сбор данных для пользователя {user_id}")
+        set_data_collection_mode(user_id, True)
+        send_safe_message(message.chat.id, "⏳ Пока AI готовит ответ, давайте завершим вашу анкету!\n\n📝 Как вас зовут?")
+        return
+    
+    logger.info(f"Используем AI для запроса: '{user_message}'")
+    bot.send_chat_action(message.chat.id, 'typing')
+    ai_response = ask_deepseek(user_message)
+    
+    # AI всегда отправляет полный ответ сразу (как в expert bot)
+    send_safe_message(message.chat.id, ai_response)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('det_'))
 def handle_details_callback(call):
