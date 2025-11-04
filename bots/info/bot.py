@@ -931,7 +931,7 @@ def ask_deepseek(user_message, chat_id=None):
             if chat_id:
                 try:
                     bot.send_chat_action(chat_id, 'typing')
-                    logger.debug("✅ Первый typing отправлен")
+                    logger.info("✅ Первый typing отправлен")
                 except Exception as e:
                     logger.error(f"Ошибка отправки первого typing: {e}")
             
@@ -941,7 +941,7 @@ def ask_deepseek(user_message, chat_id=None):
                 if not stop_typing.is_set() and chat_id:  # Проверяем что не остановлен
                     try:
                         bot.send_chat_action(chat_id, 'typing')
-                        logger.debug("✅ Периодический typing отправлен")
+                        logger.info("✅ Периодический typing отправлен")
                     except Exception as e:
                         logger.error(f"Ошибка отправки typing: {e}")
                         break
