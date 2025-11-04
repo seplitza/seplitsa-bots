@@ -10,7 +10,7 @@ import signal
 import sys
 import threading
 from google.oauth2.service_account import Credentials
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from datetime import datetime
 
 # ==================== УПРАВЛЕНИЕ ПРОЦЕССОМ ====================
@@ -173,6 +173,12 @@ def set_teaching_mode(user_id, mode):
     teaching_mode[user_id] = mode
 
 # ==================== КЛАВИАТУРЫ ====================
+def create_main_menu_button():
+    """Создает клавиатуру с одной кнопкой возврата в главное меню"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    keyboard.add(KeyboardButton('🏠 Главное меню'))
+    return keyboard
+
 def create_financial_keyboard():
     """Создает клавиатуру для финансового положения"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -312,14 +318,16 @@ def collect_user_data_step_by_step(user_id, answer):
                 'error': "🤔 Пожалуйста, введите корректное имя (минимум 2 символа):",
                 'next': 'age',
                 'success': lambda x: x.strip(),
-                'next_message': "👋 Приятно познакомиться! Сколько вам лет?"
+                'next_message': "👋 Приятно познакомиться! Сколько вам лет?",
+                'keyboard': create_main_menu_button
             },
             'age': {
                 'validate': lambda x: x.isdigit() and 18 <= int(x) <= 100,
                 'error': "🤔 Пожалуйста, введите корректный возраст (18-100):",
                 'next': 'city',
                 'success': lambda x: int(x),
-                'next_message': "🌍 В каком городе вы живете?"
+                'next_message': "🌍 В каком городе вы живете?",
+                'keyboard': create_main_menu_button
             },
             'city': {
                 'validate': lambda x: len(x.strip()) >= 2,
