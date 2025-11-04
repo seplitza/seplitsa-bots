@@ -173,12 +173,6 @@ def set_teaching_mode(user_id, mode):
     teaching_mode[user_id] = mode
 
 # ==================== КЛАВИАТУРЫ ====================
-def create_device_keyboard():
-    """Создает клавиатуру выбора устройства"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add(KeyboardButton('iPhone'), KeyboardButton('Android'))
-    return keyboard
-
 def create_financial_keyboard():
     """Создает клавиатуру для финансового положения"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -288,7 +282,7 @@ def is_user_profile_complete(user_id):
     if user_id not in user_data:
         return False
     
-    required_fields = ['name', 'age', 'city', 'device', 'financial', 'motivation']
+    required_fields = ['name', 'age', 'city', 'financial', 'motivation']
     user_profile = user_data[user_id]
     
     return all(field in user_profile for field in required_fields)
@@ -321,16 +315,8 @@ def collect_user_data_step_by_step(user_id, answer):
             'city': {
                 'validate': lambda x: len(x.strip()) >= 2,
                 'error': "🤔 Пожалуйста, введите корректное название города:",
-                'next': 'device',
-                'success': lambda x: x.strip(),
-                'next_message': "📱 Какое у вас устройство?",
-                'keyboard': create_device_keyboard
-            },
-            'device': {
-                'validate': lambda x: x in ['iPhone', 'Android'],
-                'error': "📱 Пожалуйста, выберите устройство из предложенных:",
                 'next': 'financial',
-                'success': lambda x: x,
+                'success': lambda x: x.strip(),
                 'next_message': "💰 Как бы вы оценили свое финансовое положение?",
                 'keyboard': create_financial_keyboard
             },
