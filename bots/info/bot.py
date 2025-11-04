@@ -566,6 +566,8 @@ user_data = {}
 user_progress = {}
 teaching_mode = {}
 data_collection_mode = {}
+# Хранилище соответствий хеш -> тема для кнопки "Подробнее"
+topic_hash_map = {}
 
 # ==================== ФУНКЦИИ РАБОТЫ С БАЗОЙ ЗНАНИЙ ====================
 def load_knowledge():
@@ -907,12 +909,14 @@ def create_details_button(topic):
     """Создает кнопку 'Подробнее' для инлайн-клавиатуры с безопасным callback_data"""
     keyboard = InlineKeyboardMarkup()
     
-    if len(topic.encode('utf-8')) > 50:
-        topic_hash = hashlib.md5(topic.encode('utf-8')).hexdigest()[:16]
-        callback_data = f"det_{topic_hash}"
-    else:
-        safe_topic = topic.replace(' ', '_')[:30]
-        callback_data = f"det_{safe_topic}"
+    # ВСЕГДА используем хеш для надежности (особенно с кириллицей)
+    topic_hash = hashlib.md5(topic.encode('utf-8')).hexdigest()[:16]
+    callback_data = f"det_{topic_hash}"
+    
+    # Сохраняем соответствие хеш -> тема для последующего поиска
+    topic_hash_map[topic_hash] = topic
+    
+    logger.info(f"Создана кнопка 'Подробнее' для темы '{topic}' с callback_data='{callback_data}'")
     
     keyboard.add(InlineKeyboardButton("📖 Подробнее", callback_data=callback_data))
     return keyboard
@@ -1278,40 +1282,36 @@ def handle_message(message):
 def handle_details_callback(call):
     """Обработчик нажатия на кнопку 'Подробнее'"""
     try:
-        topic_key = call.data[4:]  # Убираем префикс 'det_'
+        topic_hash = call.data[4:]  # Убираем префикс 'det_'
+        logger.info(f"Получен callback с хешем: {topic_hash}")
         
-        # Ищем оригинальный ключ по хешу
-        knowledge = load_knowledge()
-        found_topic = None
-        
-        for key in knowledge.keys():
-            if len(key.encode('utf-8')) > 50:
-                key_hash = hashlib.md5(key.encode('utf-8')).hexdigest()[:16]
-                if key_hash == topic_key:
-                    found_topic = key
-                    break
-            else:
-                safe_key = key.replace(' ', '_')[:30]
-                if safe_key == topic_key:
-                    found_topic = key
-                    break
+        # Ищем оригинальную тему по хешу в словаре
+        found_topic = topic_hash_map.get(topic_hash)
         
         if found_topic:
-            full_response = knowledge[found_topic]
+            logger.info(f"Найдена тема по хешу: '{found_topic}'")
             
-            # Обновляем прогресс (промотал до конца)
-            update_user_progress(call.from_user.id, 'message_scrolled', found_topic)
+            # Загружаем полный ответ из базы знаний
+            knowledge = load_knowledge()
+            full_response = knowledge.get(found_topic)
             
-            # Отправляем полный ответ
-            send_safe_message(call.message.chat.id, full_response)
-            
-            # Проверяем повышение звания
-            new_rank = check_rank_progression(call.from_user.id)
-            if new_rank:
-                send_safe_message(call.message.chat.id, 
-                                f"🎉 **Поздравляем! Вы достигли нового звания: {new_rank}!**")
-            
+            if full_response:
+                # Обновляем прогресс (промотал до конца)
+                update_user_progress(call.from_user.id, 'message_scrolled', found_topic)
+                
+                # Отправляем полный ответ
+                send_safe_message(call.message.chat.id, full_response)
+                
+                # Проверяем повышение звания
+                new_rank = check_rank_progression(call.from_user.id)
+                if new_rank:
+                    send_safe_message(call.message.chat.id, 
+                                    f"🎉 **Поздравляем! Вы достигли нового звания: {new_rank}!**")
+            else:
+                logger.warning(f"Тема '{found_topic}' не найдена в базе знаний")
+                send_safe_message(call.message.chat.id, "Извините, не удалось найти подробную информацию.")
         else:
+            logger.warning(f"Хеш '{topic_hash}' не найден в topic_hash_map")
             send_safe_message(call.message.chat.id, "Извините, не удалось найти подробную информацию.")
         
         bot.answer_callback_query(call.id)
