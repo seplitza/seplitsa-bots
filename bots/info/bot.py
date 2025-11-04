@@ -5,7 +5,6 @@ import os
 import logging
 import time
 import re
-import hashlib
 import gspread
 import signal
 import sys
@@ -903,19 +902,6 @@ def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
 
 # duplicate old create_menu removed; using the single KeyboardButton-based implementation above
 
-def create_details_button(topic):
-    """Создает кнопку 'Подробнее' для инлайн-клавиатуры с безопасным callback_data"""
-    keyboard = InlineKeyboardMarkup()
-    
-    # Используем MD5 хеш для безопасного callback_data (лимит 64 байта)
-    topic_hash = hashlib.md5(topic.encode('utf-8')).hexdigest()[:16]
-    callback_data = f"det_{topic_hash}"
-    
-    logger.info(f"Создана кнопка 'Подробнее' для темы '{topic}' с callback_data='{callback_data}'")
-    
-    keyboard.add(InlineKeyboardButton("📖 Подробнее", callback_data=callback_data))
-    return keyboard
-
 def ask_deepseek(user_message):
     """Запрос к DeepSeek API с увеличенным таймаутом"""
     headers = {
@@ -1251,12 +1237,12 @@ def handle_message(message):
         update_user_progress(user.id, 'topic_read', user_message)
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Всегда показываем короткий ответ с кнопкой "Подробнее" для базы знаний
-        if len(knowledge) > 400:
-            short_response = knowledge[:400] + "..."
-            send_safe_message(message.chat.id, short_response, reply_markup=create_details_button(user_message))
-        else:
-            send_safe_message(message.chat.id, knowledge)
+        # Отправляем полный текст сразу (как в expert bot)
+        send_safe_message(
+            message.chat.id,
+            f"📋 **{user_message}**\n\n{knowledge}",
+            parse_mode='Markdown'
+        )
         return
     
     # 6. Если не нашли в базе - используем AI (всегда полный ответ без кнопки)
@@ -1272,64 +1258,6 @@ def handle_message(message):
     
     # AI всегда отправляет полный ответ сразу (как в expert bot)
     send_safe_message(message.chat.id, ai_response)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('det_'))
-def handle_details_callback(call):
-    """Обработчик нажатия на кнопку 'Подробнее'"""
-    logger.info(f"🔔 CALLBACK ПОЛУЧЕН! data='{call.data}', from_user={call.from_user.id}")
-    
-    # ВАЖНО: сразу отвечаем на callback, чтобы убрать "часики" в Telegram
-    bot.answer_callback_query(call.id)
-    logger.info("✅ answer_callback_query вызван")
-    
-    try:
-        # Восстанавливаем тему из текста сообщения (как в expert bot)
-        message_text = call.message.text
-        topic = None
-        
-        # Ищем тему в первой строке (формат: "🔬 ТЕМА\n\nтекст...")
-        if message_text and '\n' in message_text:
-            first_line = message_text.split('\n')[0].strip()
-            # Убираем эмодзи из начала
-            topic = re.sub(r'^[🔬💪🙆🥗📚🎓🛠️❓💆💊📖]+\s*', '', first_line).strip()
-            logger.info(f"Извлечена тема из сообщения: '{topic}'")
-        
-        if not topic:
-            logger.warning("Не удалось извлечь тему из сообщения")
-            send_safe_message(call.message.chat.id, "Извините, не удалось определить тему.")
-            return
-        
-        # Ищем полный ответ в базе знаний
-        knowledge = load_knowledge()
-        full_response = find_knowledge_by_key(topic)
-        
-        if full_response:
-            logger.info(f"Найден полный ответ для темы: '{topic}'")
-            
-            # Обновляем прогресс (промотал до конца)
-            update_user_progress(call.from_user.id, 'message_scrolled', topic)
-            
-            # Отправляем полный ответ
-            send_safe_message(call.message.chat.id, full_response)
-            
-            # Проверяем повышение звания
-            new_rank = check_rank_progression(call.from_user.id)
-            if new_rank:
-                send_safe_message(call.message.chat.id, 
-                                f"🎉 **Поздравляем! Вы достигли нового звания: {new_rank}!**")
-        else:
-            logger.warning(f"Тема '{topic}' не найдена в базе знаний")
-            send_safe_message(call.message.chat.id, "Извините, не удалось найти подробную информацию.")
-        
-    except Exception as e:
-        logger.error(f"Ошибка обработки callback: {e}", exc_info=True)
-        send_safe_message(call.message.chat.id, "Произошла ошибка при загрузке подробностей.")
-
-@bot.callback_query_handler(func=lambda call: True)
-def handle_any_callback(call):
-    """Ловит ВСЕ необработанные callback"""
-    logger.warning(f"⚠️ Необработанный callback: data='{call.data}', from_user={call.from_user.id}")
-    bot.answer_callback_query(call.id, "Эта кнопка пока не работает")
 
 @bot.message_handler(commands=['progress'])
 def handle_progress_command(message):
