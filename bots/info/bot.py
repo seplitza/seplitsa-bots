@@ -1276,8 +1276,11 @@ def handle_message(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('det_'))
 def handle_details_callback(call):
     """Обработчик нажатия на кнопку 'Подробнее'"""
+    logger.info(f"🔔 CALLBACK ПОЛУЧЕН! data='{call.data}', from_user={call.from_user.id}")
+    
     # ВАЖНО: сразу отвечаем на callback, чтобы убрать "часики" в Telegram
     bot.answer_callback_query(call.id)
+    logger.info("✅ answer_callback_query вызван")
     
     try:
         # Восстанавливаем тему из текста сообщения (как в expert bot)
@@ -1321,6 +1324,12 @@ def handle_details_callback(call):
     except Exception as e:
         logger.error(f"Ошибка обработки callback: {e}", exc_info=True)
         send_safe_message(call.message.chat.id, "Произошла ошибка при загрузке подробностей.")
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_any_callback(call):
+    """Ловит ВСЕ необработанные callback"""
+    logger.warning(f"⚠️ Необработанный callback: data='{call.data}', from_user={call.from_user.id}")
+    bot.answer_callback_query(call.id, "Эта кнопка пока не работает")
 
 @bot.message_handler(commands=['progress'])
 def handle_progress_command(message):
