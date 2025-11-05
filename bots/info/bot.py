@@ -409,6 +409,11 @@ def collect_user_data_step_by_step(user_id, answer):
         profile = user_data[user_id]
         current_step = profile.get('step', 'name')
         
+        # Если пользователь находится в состоянии проверки данных
+        if current_step == 'review':
+            logger.info(f"📋 Пользователь {user_id} находится в режиме проверки данных")
+            return show_data_review(user_id, profile)
+        
         # МИГРАЦИЯ: если пользователь застрял на старом шаге 'device', пропускаем его
         if current_step == 'device':
             logger.info(f"🔄 Миграция: пропускаем устаревший шаг 'device' для {user_id}")
@@ -484,7 +489,7 @@ def collect_user_data_step_by_step(user_id, answer):
         # Если это был последний шаг
         if next_step == 'complete':
             profile['data_collected'] = True
-            profile['step'] = 'complete'
+            profile['step'] = 'review'  # Переходим к проверке данных
             
             # Присваиваем звание "Интересующийся Сеплицей"
             if user_id in user_progress:
@@ -493,17 +498,9 @@ def collect_user_data_step_by_step(user_id, answer):
                 user_progress[user_id]['data_collected'] = True
             
             save_user_data()
-            set_data_collection_mode(user_id, False)
             
-            completion_text = (
-                "✅ Отлично! Анкета заполнена.\n\n"
-                "🌱 Вам присвоено звание: **Интересующийся Сеплицей**\n\n"
-                "🎯 Теперь я смогу давать вам более персонализированные рекомендации.\n\n"
-                "💡 Вы всегда можете продолжить изучение системы через меню!"
-            )
-            
-            keyboard = create_menu('main')[0]
-            return completion_text, keyboard
+            # Показываем собранные данные для подтверждения
+            return show_data_review(user_id, profile)
         
         # Переходим к следующему шагу
         profile['step'] = next_step
@@ -515,6 +512,65 @@ def collect_user_data_step_by_step(user_id, answer):
     except Exception as e:
         logger.error(f"Ошибка в сборе данных: {e}")
         return "Произошла ошибка. Пожалуйста, попробуйте еще раз или обратитесь к администратору.", None
+
+def show_data_review(user_id, profile):
+    """Показывает собранные данные для подтверждения"""
+    try:
+        review_text = (
+            "📋 **ПРОВЕРЬТЕ ВАШИ ДАННЫЕ**\n\n"
+            f"👤 **Имя:** {profile.get('name', 'Не указано')}\n"
+            f"🎂 **Возраст:** {profile.get('age', 'Не указан')}\n"
+            f"🌍 **Город:** {profile.get('city', 'Не указан')}\n"
+            f"💰 **Финансовое положение:** {profile.get('financial', 'Не указано')}\n"
+            f"🎯 **Мотивация:** {profile.get('motivation', 'Не указана')}\n\n"
+            "❓ **Все данные корректны?**"
+        )
+        
+        keyboard = create_data_confirmation_keyboard()
+        return review_text, keyboard
+        
+    except Exception as e:
+        logger.error(f"Ошибка при показе данных: {e}")
+        return "Произошла ошибка при отображении данных.", None
+
+def create_data_confirmation_keyboard():
+    """Создает клавиатуру для подтверждения данных"""
+    markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        KeyboardButton("✅ Все верно"),
+        KeyboardButton("✏️ Исправить данные")
+    )
+    markup.add(KeyboardButton("🔙 НАЗАД В ГЛАВНОЕ МЕНЮ"))
+    return markup
+
+def create_notification_frequency_keyboard():
+    """Создает клавиатуру для выбора частоты уведомлений"""
+    markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        KeyboardButton("⏰ Раз в час"),
+        KeyboardButton("📅 Раз в день")
+    )
+    markup.add(
+        KeyboardButton("📆 Раз в неделю"), 
+        KeyboardButton("🗓 Раз в месяц")
+    )
+    markup.add(KeyboardButton("🚫 Никогда"))
+    markup.add(KeyboardButton("🔙 НАЗАД В ГЛАВНОЕ МЕНЮ"))
+    return markup
+
+def complete_data_collection(user_id):
+    """Завершает сбор данных и переводит в основное меню"""
+    set_data_collection_mode(user_id, False)
+    
+    completion_text = (
+        "🎉 **СПАСИБО ЗА РЕГИСТРАЦИЮ!**\n\n"
+        "🌱 Вам присвоено звание: **Интересующийся Сеплицей**\n\n"
+        "🎯 Теперь я смогу давать вам более персонализированные рекомендации по системе омоложения.\n\n"
+        "💡 Изучайте систему через меню и задавайте вопросы!"
+    )
+    
+    keyboard = create_menu('main')[0]
+    return completion_text, keyboard
 
 # ==================== ПРОМПТ СЕПЛИЦА ====================
 SEPLITSA_SYSTEM_PROMPT = """
@@ -1417,6 +1473,65 @@ def handle_fill_profile(message):
                      "📝 Давайте заполним вашу анкету для персонализированных рекомендаций!\n\n"
                      "Как вас зовут?",
                      reply_markup=create_main_menu_button())
+
+@bot.message_handler(func=lambda message: message.text in ["✅ Все верно", "✏️ Исправить данные"])
+def handle_data_confirmation(message):
+    """Обработчик подтверждения данных анкеты"""
+    user_id = message.from_user.id
+    user_message = message.text.strip()
+    
+    if user_message == "✅ Все верно":
+        # Переходим к настройке уведомлений
+        notification_text = (
+            "🎉 **ОТЛИЧНО!**\n\n"
+            "Не будете ли вы против, если время от времени я буду присылать полезную информацию по долголетию?\n\n"
+            "📬 **Как часто вы хотели бы получать уведомления?**"
+        )
+        keyboard = create_notification_frequency_keyboard()
+        send_safe_message(message.chat.id, notification_text, reply_markup=keyboard)
+        
+    elif user_message == "✏️ Исправить данные":
+        # Сбрасываем данные и начинаем заново
+        if user_id in user_data:
+            # Сохраняем telegram данные
+            telegram_data = {
+                'telegram_username': user_data[user_id].get('telegram_username'),
+                'telegram_first_name': user_data[user_id].get('telegram_first_name'),
+                'telegram_last_name': user_data[user_id].get('telegram_last_name')
+            }
+            user_data[user_id] = telegram_data
+            user_data[user_id]['step'] = 'name'
+        
+        set_data_collection_mode(user_id, True)
+        send_safe_message(message.chat.id, "📝 Давайте заполним анкету заново.\n\nКак вас зовут?", 
+                         reply_markup=create_main_menu_button())
+
+@bot.message_handler(func=lambda message: message.text in ["⏰ Раз в час", "📅 Раз в день", "📆 Раз в неделю", "🗓 Раз в месяц", "🚫 Никогда"])
+def handle_notification_frequency(message):
+    """Обработчик выбора частоты уведомлений"""
+    user_id = message.from_user.id
+    frequency = message.text.strip()
+    
+    # Сохраняем настройку уведомлений
+    if user_id in user_data:
+        user_data[user_id]['notification_frequency'] = frequency
+        save_user_data()
+    
+    # Завершаем сбор данных
+    response_text, keyboard = complete_data_collection(user_id)
+    
+    if frequency == "🚫 Никогда":
+        thanks_text = (
+            "✅ **Понятно!** Я не буду присылать уведомления.\n\n"
+            f"{response_text}"
+        )
+    else:
+        thanks_text = (
+            f"✅ **Спасибо!** Буду присылать полезную информацию **{frequency.lower()}**.\n\n"
+            f"{response_text}"
+        )
+    
+    send_safe_message(message.chat.id, thanks_text, reply_markup=keyboard)
 
 @bot.message_handler(func=lambda message: is_data_collection_mode(message.from_user.id))
 def handle_data_collection(message):
