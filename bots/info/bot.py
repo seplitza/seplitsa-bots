@@ -455,7 +455,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'motivation',
                 'success': lambda x: x,
                 'next_message': "🎯 Насколько вы настроены на работу над собой?",
-                'keyboard': create_motivation_keyboard
+                'keyboard': create_financial_keyboard
             },
             'motivation': {
                 'validate': lambda x: x in ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой'],
