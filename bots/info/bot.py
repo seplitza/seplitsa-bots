@@ -431,7 +431,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'age',
                 'success': lambda x: x.strip(),
                 'next_message': "👋 Приятно познакомиться! Сколько вам лет?",
-                'keyboard': create_main_menu_button
+                'next_keyboard': create_main_menu_button  # обычная клавиатура для ввода возраста
             },
             'age': {
                 'validate': lambda x: x.isdigit() and 18 <= int(x) <= 100,
@@ -439,7 +439,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'city',
                 'success': lambda x: int(x),
                 'next_message': "🌍 В каком городе вы живете?",
-                'keyboard': create_main_menu_button
+                'next_keyboard': create_main_menu_button  # обычная клавиатура для ввода города
             },
             'city': {
                 'validate': lambda x: len(x.strip()) >= 2 and x.strip() not in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен', 'Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой'],
@@ -447,7 +447,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'financial',
                 'success': lambda x: x.strip(),
                 'next_message': "💰 Как бы вы оценили свое финансовое положение?",
-                'keyboard': create_main_menu_button
+                'next_keyboard': create_financial_keyboard  # ФИНАНСОВАЯ клавиатура: экономлю, стабильно и т.д.
             },
             'financial': {
                 'validate': lambda x: x in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен'],
@@ -455,7 +455,8 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'motivation',
                 'success': lambda x: x,
                 'next_message': "🎯 Насколько вы настроены на работу над собой?",
-                'keyboard': create_financial_keyboard
+                'next_keyboard': create_motivation_keyboard,  # МОТИВАЦИОННАЯ клавиатура: изучаю, уже работаю и т.д.
+                'current_keyboard': create_financial_keyboard  # при ошибке показываем финансовую клавиатуру
             },
             'motivation': {
                 'validate': lambda x: x in ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой'],
@@ -463,7 +464,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'complete',
                 'success': lambda x: x,
                 'next_message': "✅ Отлично! Давайте проверим ваши данные:",
-                'keyboard': create_motivation_keyboard
+                'current_keyboard': create_motivation_keyboard  # при ошибке показываем мотивационную клавиатуру
             }
         }
         
@@ -480,7 +481,10 @@ def collect_user_data_step_by_step(user_id, answer):
         
         if not is_valid:
             logger.info(f"❌ Валидация не прошла для шага '{current_step}': ответ='{answer}'")
-            return step['error'], step.get('keyboard', lambda: None)()
+            # Для ошибок показываем клавиатуру текущего шага
+            error_keyboard_func = step.get('current_keyboard', lambda: None)
+            error_keyboard = error_keyboard_func()
+            return step['error'], error_keyboard
         
         # Сохраняем ответ и обновляем шаг
         logger.info(f"✅ Валидация пройдена для шага '{current_step}': ответ='{answer}' → следующий шаг='{step['next']}'")
@@ -507,17 +511,12 @@ def collect_user_data_step_by_step(user_id, answer):
         profile['step'] = next_step
         save_user_data()  # Сохраняем после каждого шага
         
-        # Получаем клавиатуру для следующего шага
-        next_step_config = step_validation.get(next_step)
-        if next_step_config:
-            next_keyboard_func = next_step_config.get('keyboard', lambda: None)
-            next_keyboard = next_keyboard_func()
-            next_message = next_step_config.get('next_message', '')
-            logger.info(f"🎹 Показываем клавиатуру для шага '{next_step}': функция={next_keyboard_func.__name__ if hasattr(next_keyboard_func, '__name__') else 'lambda'}")
-            return next_message, next_keyboard
-        else:
-            logger.error(f"❌ Не найдена конфигурация для шага '{next_step}'")
-            return "Произошла ошибка при переходе к следующему шагу.", None
+        # Получаем клавиатуру для следующего шага из ТЕКУЩЕГО шага
+        next_keyboard_func = step.get('next_keyboard', lambda: None)
+        next_keyboard = next_keyboard_func()
+        next_message = step.get('next_message', '')
+        logger.info(f"🎹 Показываем клавиатуру для следующего шага '{next_step}': функция={next_keyboard_func.__name__ if hasattr(next_keyboard_func, '__name__') else 'lambda'}")
+        return next_message, next_keyboard
         
     except Exception as e:
         logger.error(f"Ошибка в сборе данных: {e}")
