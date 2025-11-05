@@ -250,6 +250,128 @@ def safe_markdown_text(text):
         logger.error(f"Ошибка очистки Markdown: {e}")
         return re.sub(r'([*_`\\[\]])', '', text)
 
+def create_knowledge_links(text, knowledge=None):
+    """Создает ссылки на ключевые слова из базы знаний"""
+    try:
+        if not knowledge:
+            knowledge = load_knowledge()
+        
+        if not knowledge:
+            return text
+            
+        # Создаем словарь ключевых фраз с приоритетом (длинные фразы сначала)
+        keywords = {}
+        for key in knowledge.keys():
+            # Добавляем оригинальный ключ
+            keywords[key.lower()] = key
+            
+            # Добавляем варианты без скобок и спецсимволов
+            clean_key = re.sub(r'[()]', '', key).strip()
+            if clean_key != key:
+                keywords[clean_key.lower()] = key
+                
+            # Добавляем сокращенные варианты
+            if 'ступень' in key.lower():
+                short_key = key.replace('ступень ', '').strip()
+                keywords[short_key.lower()] = key
+                
+        # Сортируем по длине (длинные фразы сначала, чтобы избежать конфликтов)
+        sorted_keywords = sorted(keywords.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        result_text = text
+        linked_positions = set()  # Отслеживаем уже обработанные позиции
+        
+        for keyword_lower, original_key in sorted_keywords:
+            # Используем границы слов для точного поиска
+            pattern = r'\b' + re.escape(keyword_lower) + r'\b'
+            
+            def replace_func(match):
+                start_pos = match.start()
+                end_pos = match.end()
+                
+                # Проверяем, не пересекается ли с уже созданными ссылками
+                if any(pos >= start_pos and pos < end_pos for pos in linked_positions):
+                    return match.group(0)
+                    
+                # Отмечаем позиции как использованные
+                for pos in range(start_pos, end_pos):
+                    linked_positions.add(pos)
+                    
+                # Создаем ссылку только если это не часть уже существующей ссылки
+                matched_text = match.group(0)
+                return f"[{matched_text}](#{original_key})"
+            
+            result_text = re.sub(pattern, replace_func, result_text, flags=re.IGNORECASE)
+            
+        return result_text
+        
+    except Exception as e:
+        logger.error(f"Ошибка создания ссылок на знания: {e}")
+        return text
+
+def enhance_text_with_links(text, knowledge=None):
+    """Обогащает текст ссылками на ключевые слова из базы знаний"""
+    try:
+        if not knowledge:
+            knowledge = load_knowledge()
+        
+        # Если в тексте уже есть ссылки, не обрабатываем его
+        if '[' in text and '](' in text:
+            return text
+            
+        # Список ключевых терминов для превращения в ссылки
+        key_terms = {
+            'система сеплица': 'что такое система сеплица',
+            'сцепление': 'ступень 1 сцепление',
+            'естественность': 'ступень 2 естественность', 
+            'питание': 'ступень 3 питание',
+            'забота о клетках': 'ступень 4 забота о клетках',
+            'биохакинг': 'ступень 4 забота о клетках',
+            'nmn': 'NMN (НИКОТИНАМИДМОНОНУКЛЕОТИД)',
+            'никотинамидмононуклеотид': 'NMN (НИКОТИНАМИДМОНОНУКЛЕОТИД)',
+            'омега-3': 'Омега-3 с упором на dha',
+            'омега 3': 'Омега-3 с упором на dha',
+            'dha': 'Омега-3 с упором на dha',
+            'кверцетин': 'КВЕРЦЕТИН',
+            'ghk-cu': 'GHK-Cu',
+            'медный трипептид': 'GHK-Cu',
+            'сеплица-неофит': 'что такое система сеплица',
+            'неофит': 'что такое система сеплица',
+            'сеплица': 'что такое система сеплица'  # Одиночная 'сеплица' в конце
+        }
+        
+        result_text = text
+        
+        # Сортируем по длине (длинные фразы сначала, чтобы избежать конфликтов)
+        sorted_terms = sorted(key_terms.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for term, knowledge_key in sorted_terms:
+            if knowledge_key in knowledge:
+                # Создаем паттерн для поиска термина (игнорируя регистр, с границами слов)
+                pattern = r'\b' + re.escape(term) + r'\b'
+                
+                # Заменяем только первое вхождение, если оно есть
+                match = re.search(pattern, result_text, flags=re.IGNORECASE)
+                if match:
+                    matched_text = match.group(0)
+                    link = f"[{matched_text}](#{knowledge_key})"
+                    result_text = result_text[:match.start()] + link + result_text[match.end():]
+                    
+                    # После замены прерываем поиск других терминов, чтобы избежать вложенных ссылок
+                    break
+        
+        return result_text
+        
+    except Exception as e:
+        logger.error(f"Ошибка обогащения текста ссылками: {e}")
+        return text
+        
+        return result_text
+        
+    except Exception as e:
+        logger.error(f"Ошибка обогащения текста ссылками: {e}")
+        return text
+
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_TOKEN = "7372636777:AAGZULVuDbnHh6GUE6atSNaReOEqdrK5LZg"
 DEEPSEEK_API_KEY = "sk-030c8e9fbbb642a0b2850318ffad64a1"
@@ -586,10 +708,13 @@ def get_learning_progress(user_id):
         
         # Преимущества следующего уровня
         progress_text += f"\n💎 **Звание 'Сеплица-Неофит' откроет:**\n"
-        progress_text += f"   • 🤝 Эффективную помощь друзьям и близким\n"
-        progress_text += f"   • 📈 Возможность зарабатывать на продуктах Сеплица\n"
-        progress_text += f"   • 🎯 Доступ к специальным материалам\n"
-        progress_text += f"   • 🏅 Участие в сообществе практиков\n\n"
+        progress_text += f"   • 🤝 Эффективную помощь друзьям и близким в освоении системы Сеплица\n"
+        progress_text += f"   • 📈 Возможность зарабатывать на коммерческих продуктах Сеплица\n"
+        progress_text += f"   • 🎯 Доступ к специальным материалам по биохакингу\n"
+        progress_text += f"   • 🏅 Участие в сообществе практиков системы\n\n"
+        
+        # Обогащаем текст ссылками на ключевые термины
+        progress_text = enhance_text_with_links(progress_text)
         
         return progress_text
         
@@ -1143,9 +1268,13 @@ def find_knowledge_by_key(key):
     logger.warning(f"Ключ не найден: '{original_key}' (норм: '{normalized_key}')")
     return None
 
-def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
-    """Безопасная отправка сообщения с автоматическим определением режима"""
+def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown', enhance_links=True):
+    """Безопасная отправка сообщения с автоматическим определением режима и обогащением ссылками"""
     try:
+        # Обогащаем текст ссылками на ключевые слова
+        if enhance_links and parse_mode == 'Markdown':
+            text = enhance_text_with_links(text)
+        
         # Для длинных текстов или текстов с большим количеством спецсимволов отключаем Markdown
         if len(text) > 3000 or text.count('*') > 50 or text.count('_') > 50:
             return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=None)
@@ -1156,8 +1285,12 @@ def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения с Markdown: {e}")
         try:
-            # Пробуем отправить без Markdown
-            return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=None)
+            # Пробуем отправить без Markdown и без ссылок
+            clean_text = text
+            if enhance_links:
+                # Удаляем все ссылки если возникла проблема
+                clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+            return bot.send_message(chat_id, clean_text, reply_markup=reply_markup, parse_mode=None)
         except Exception as e2:
             logger.error(f"Ошибка отправки без Markdown: {e2}")
             # Если и это не работает, разбиваем на части или очищаем
@@ -1698,7 +1831,7 @@ def handle_message(message):
         update_user_progress(user.id, 'topic_read', user_message)
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Отправляем полный текст сразу (как в expert bot)
+        # Отправляем полный текст сразу с автоматическими ссылками (enhance_links=True по умолчанию)
         send_safe_message(
             message.chat.id,
             f"📋 **{user_message}**\n\n{knowledge}",
@@ -1718,7 +1851,7 @@ def handle_message(message):
     # Вызываем AI (может занять время) - передаем chat_id для автоматического индикатора typing
     ai_response = ask_deepseek(user_message, chat_id=message.chat.id)
     
-    # AI всегда отправляет полный ответ сразу (как в expert bot)
+    # AI ответ также обогащается ссылками автоматически
     send_safe_message(message.chat.id, ai_response)
 
 @bot.message_handler(commands=['progress'])
