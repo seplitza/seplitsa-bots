@@ -414,7 +414,7 @@ def collect_user_data_step_by_step(user_id, answer):
             profile['step'] = 'financial'
             save_user_data()
         
-        logger.info(f"📊 Сбор данных для {user_id}: текущий шаг='{current_step}', ответ='{answer}'")
+        logger.info(f"📊 Сбор данных для {user_id}: текущий шаг='{current_step}', ответ='{answer}' [BUILD: 47530a3]")
         
         # Словарь валидации для каждого шага
         step_validation = {
@@ -467,7 +467,10 @@ def collect_user_data_step_by_step(user_id, answer):
         step = step_validation[current_step]
         
         # Проверяем валидность ответа
-        if not step['validate'](answer):
+        is_valid = step['validate'](answer)
+        logger.info(f"🔍 Валидация для шага '{current_step}': ответ='{answer}' -> valid={is_valid}")
+        
+        if not is_valid:
             logger.info(f"❌ Валидация не прошла для шага '{current_step}': ответ='{answer}'")
             return step['error'], step.get('keyboard', lambda: None)()
         
@@ -1335,6 +1338,31 @@ def handle_menu_command(message):
         set_data_collection_mode(user_id, False)
     keyboard = create_menu('main')[0]
     send_safe_message(message.chat.id, "🏠 Главное меню:", reply_markup=keyboard)
+
+@bot.message_handler(commands=['reset_profile'])
+def handle_reset_profile(message):
+    """Команда для сброса анкеты пользователя"""
+    user_id = message.from_user.id
+    logger.info(f"🔄 Сброс профиля для пользователя {user_id}")
+    
+    # Очищаем данные пользователя
+    if user_id in user_data:
+        old_data = user_data[user_id].copy()
+        logger.info(f"🔄 Удаляем старые данные: {old_data}")
+        del user_data[user_id]
+    
+    # Очищаем прогресс
+    if user_id in user_progress:
+        old_progress = user_progress[user_id].copy()
+        logger.info(f"🔄 Удаляем старый прогресс: {old_progress}")
+        del user_progress[user_id]
+    
+    # Выходим из режима сбора данных
+    set_data_collection_mode(user_id, False)
+    save_user_data()
+    
+    keyboard = create_menu('main')[0]
+    send_safe_message(message.chat.id, "✅ Анкета сброшена! Теперь можете заполнить её заново.", reply_markup=keyboard)
 
 @bot.message_handler(commands=['fill_profile'])
 def handle_fill_profile(message):
