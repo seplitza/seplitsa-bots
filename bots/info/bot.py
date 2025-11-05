@@ -290,28 +290,44 @@ RANK_REQUIREMENTS = {
 def validate_user_data(user_id):
     """Проверяет корректность собранных данных"""
     if user_id not in user_data:
+        logger.info(f"🔍 Валидация: пользователь {user_id} не найден в user_data")
         return False, []
     
     profile = user_data[user_id]
     errors = []
     
+    logger.info(f"🔍 Валидация данных для {user_id}: {profile}")
+    
     # Проверяем корректность финансового положения
     valid_financial = ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен']
-    if 'financial' in profile and profile['financial'] not in valid_financial:
-        errors.append('financial')
+    if 'financial' in profile:
+        if profile['financial'] not in valid_financial:
+            logger.info(f"❌ Некорректное финансовое положение: '{profile['financial']}' не в {valid_financial}")
+            errors.append('financial')
+        else:
+            logger.info(f"✅ Финансовое положение корректно: '{profile['financial']}'")
     
     # Проверяем корректность мотивации
     valid_motivation = ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой']
-    if 'motivation' in profile and profile['motivation'] not in valid_motivation:
-        errors.append('motivation')
+    if 'motivation' in profile:
+        if profile['motivation'] not in valid_motivation:
+            logger.info(f"❌ Некорректная мотивация: '{profile['motivation']}' не в {valid_motivation}")
+            errors.append('motivation')
+        else:
+            logger.info(f"✅ Мотивация корректна: '{profile['motivation']}'")
     
     # Проверяем, что город - это не ответ из других вопросов
     if 'city' in profile:
         city = profile['city']
         if city in valid_financial or city in valid_motivation:
+            logger.info(f"❌ Город содержит ответ из других вопросов: '{city}'")
             errors.append('city')
+        else:
+            logger.info(f"✅ Город корректен: '{city}'")
     
-    return len(errors) == 0, errors
+    result = len(errors) == 0
+    logger.info(f"🔍 Результат валидации для {user_id}: valid={result}, errors={errors}")
+    return result, errors
 
 def is_user_profile_complete(user_id):
     """Проверяет, завершена ли анкета пользователя корректно"""
@@ -327,38 +343,56 @@ def is_user_profile_complete(user_id):
     
     # Проверяем корректность данных
     is_valid, _ = validate_user_data(user_id)
+    
+    # Если данные корректны и все поля заполнены, устанавливаем флаг
+    if is_valid:
+        init_user_progress(user_id)
+        user_progress[user_id]['data_collected'] = True
+        user_data[user_id]['data_collected'] = True
+        logger.info(f"✅ Профиль пользователя {user_id} полностью корректен, установлен флаг data_collected")
+        
     return is_valid
 
 def fix_incorrect_data(user_id):
     """Исправляет некорректные данные и возвращает с какого шага продолжить"""
+    logger.info(f"🔧 Исправление данных для {user_id}")
     is_valid, errors = validate_user_data(user_id)
     if is_valid:
+        logger.info(f"✅ Данные корректны, исправление не требуется")
         return None
     
     profile = user_data[user_id]
+    logger.info(f"🔧 Найдены ошибки: {errors}")
     
     # Если город некорректный, начинаем с города
     if 'city' in errors:
+        logger.info(f"🔧 Исправляем город, устанавливаем step='city'")
         profile['step'] = 'city'
         return 'city'
     
     # Если финансы некорректные, начинаем с финансов
     if 'financial' in errors:
+        logger.info(f"🔧 Исправляем финансы, устанавливаем step='financial'")
         profile['step'] = 'financial'
         # Очищаем некорректные данные
         if 'financial' in profile:
+            logger.info(f"🔧 Удаляем некорректные финансы: '{profile['financial']}'")
             del profile['financial']
         if 'motivation' in profile:
+            logger.info(f"🔧 Удаляем мотивацию: '{profile['motivation']}'")
             del profile['motivation']
         return 'financial'
     
     # Если мотивация некорректная, начинаем с мотивации
     if 'motivation' in errors:
+        logger.info(f"🔧 Исправляем мотивацию, устанавливаем step='motivation'")
         profile['step'] = 'motivation'
         if 'motivation' in profile:
+            logger.info(f"🔧 Удаляем некорректную мотивацию: '{profile['motivation']}'")
             del profile['motivation']
         return 'motivation'
     
+    logger.info(f"🔧 Неизвестные ошибки: {errors}")
     return None
 
 def collect_user_data_step_by_step(user_id, answer):
@@ -447,6 +481,7 @@ def collect_user_data_step_by_step(user_id, answer):
             # Присваиваем звание "Интересующийся Сеплицей"
             if user_id in user_progress:
                 user_progress[user_id]['current_rank'] = 'interested'
+                # ⚠️ ВАЖНО: устанавливаем флаг в user_progress тоже!
                 user_progress[user_id]['data_collected'] = True
             
             save_user_data()
@@ -1302,17 +1337,24 @@ def handle_menu_command(message):
 def handle_fill_profile(message):
     """Команда для принудительного заполнения анкеты"""
     user_id = message.from_user.id
+    logger.info(f"📝 handle_fill_profile вызвана для {user_id}")
     
     # Проверяем, заполнена ли анкета корректно
     if is_user_profile_complete(user_id):
+        logger.info(f"✅ Профиль {user_id} уже заполнен корректно")
         send_safe_message(message.chat.id, "✅ Ваш профиль уже заполнен корректно!")
         return
     
+    logger.info(f"🔍 Проверяем валидность данных для {user_id}")
     # Проверяем, есть ли ошибки в данных
     is_valid, errors = validate_user_data(user_id)
+    logger.info(f"🔍 Результат проверки: valid={is_valid}, errors={errors}")
+    
     if not is_valid and errors:
+        logger.info(f"❌ Найдены ошибки, запускаем исправление")
         # Исправляем некорректные данные
         error_step = fix_incorrect_data(user_id)
+        logger.info(f"🔧 Исправление вернуло шаг: {error_step}")
         set_data_collection_mode(user_id, True)
         
         error_messages = {
@@ -1322,6 +1364,7 @@ def handle_fill_profile(message):
         }
         
         message_text = error_messages.get(error_step, "🔄 Давайте уточним некоторые данные.")
+        logger.info(f"📤 Отправляем сообщение об ошибке: {message_text}")
         
         # Подбираем клавиатуру
         keyboard_map = {
@@ -1334,6 +1377,7 @@ def handle_fill_profile(message):
         send_safe_message(message.chat.id, message_text, reply_markup=keyboard)
         return
     
+    logger.info(f"📋 Анкета не заполнена, начинаем с начала")
     # Если анкета не заполнена вообще, начинаем с начала
     set_data_collection_mode(user_id, True)
     send_safe_message(message.chat.id, 
