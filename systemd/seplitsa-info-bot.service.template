@@ -8,6 +8,7 @@ User=seplitsa
 Group=seplitsa
 WorkingDirectory=/home/seplitsa/seplitsa-bots/bots/info
 Environment=PATH=/home/seplitsa/seplitsa-bots/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=SEPLITSA_DATA_DIR=/run/seplitsa-info-bot
 ExecStart=/home/seplitsa/seplitsa-bots/venv/bin/python bot.py
 Restart=always
 RestartSec=10
