@@ -257,8 +257,10 @@ DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 AUTHOR_USERNAME = "alexpina76"
 # Data directory from environment or current directory
 DATA_DIR = os.getenv('SEPLITSA_DATA_DIR', '.')
+# Knowledge base stays in project directory (persistent)
+KNOWLEDGE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
 
-KNOWLEDGE_FILE = os.path.join(DATA_DIR, "seplitsa_info_knowledge.json")
+KNOWLEDGE_FILE = os.path.join(KNOWLEDGE_DIR, "info_knowledge.json.example")
 USER_DATA_FILE = os.path.join(DATA_DIR, "seplitsa_info_user_data.json")
 
 # Настройки Google Sheets
