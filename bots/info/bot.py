@@ -309,7 +309,81 @@ def create_knowledge_links(text, knowledge=None):
         logger.error(f"Ошибка создания ссылок на знания: {e}")
         return text
 
-def enhance_text_with_links(text, knowledge=None):
+def generate_related_buttons(text, knowledge=None, current_article_key=None, max_buttons=6):
+    """Генерирует inline кнопки с похожими статьями на основе ключевых слов в тексте"""
+    try:
+        if not knowledge:
+            knowledge = load_knowledge()
+        
+        # Список ключевых терминов для поиска связанных статей
+        key_terms = {
+            'система сеплица': 'что такое система сеплица',
+            'сцепление': 'ступень 1 сцепление',
+            'естественность': 'ступень 2 естественность', 
+            'питание': 'ступень 3 питание',
+            'забота о клетках': 'ступень 4 забота о клетках',
+            'биохакинг': 'ступень 4 забота о клетках',
+            'nmn': 'NMN (НИКОТИНАМИДМОНОНУКЛЕОТИД)',
+            'никотинамидмононуклеотид': 'NMN (НИКОТИНАМИДМОНОНУКЛЕОТИД)',
+            'омега-3': 'Омега-3 с упором на dha',
+            'омега 3': 'Омега-3 с упором на dha',
+            'dha': 'Омега-3 с упором на dha',
+            'кверцетин': 'КВЕРЦЕТИН',
+            'ghk-cu': 'GHK-Cu',
+            'медный трипептид': 'GHK-Cu',
+            'сеплица-неофит': 'что такое система сеплица',
+            'неофит': 'что такое система сеплица',
+            'сеплица': 'что такое система сеплица'  # Одиночная 'сеплица' в конце
+        }
+        
+        # Находим релевантные статьи
+        found_articles = []
+        text_lower = text.lower()
+        
+        # Сортируем по длине (длинные фразы сначала, чтобы избежать конфликтов)
+        sorted_terms = sorted(key_terms.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for term, knowledge_key in sorted_terms:
+            # Исключаем термины, которые ведут к текущей статье
+            if current_article_key and knowledge_key == current_article_key:
+                continue
+                
+            # Проверяем, есть ли этот термин в тексте и есть ли соответствующая статья
+            if term in text_lower and knowledge_key in knowledge:
+                if knowledge_key not in [art[1] for art in found_articles]:  # Избегаем дубликатов
+                    found_articles.append((term, knowledge_key))
+                    
+                if len(found_articles) >= max_buttons:
+                    break
+        
+        # Создаем inline кнопки
+        if found_articles:
+            markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+            
+            for term, knowledge_key in found_articles:
+                # Создаем короткий текст для кнопки
+                button_text = knowledge_key.replace('ступень ', '').replace('что такое ', '').title()
+                if len(button_text) > 25:  # Ограничиваем длину текста кнопки
+                    button_text = button_text[:22] + '...'
+                
+                # Создаем команду callback
+                command_key = knowledge_key.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('-', '_')
+                callback_data = f"knowledge_{command_key}"
+                
+                markup.add(telebot.types.InlineKeyboardButton(
+                    text=f"📖 {button_text}",
+                    callback_data=callback_data
+                ))
+            
+            return markup
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Ошибка генерации связанных кнопок: {e}")
+        return None
+
+def enhance_text_with_links(text, knowledge=None, current_article_key=None):
     """Обогащает текст ссылками на ключевые слова из базы знаний через команды бота"""
     try:
         if not knowledge:
@@ -346,21 +420,60 @@ def enhance_text_with_links(text, knowledge=None):
         sorted_terms = sorted(key_terms.items(), key=lambda x: len(x[0]), reverse=True)
         
         for term, knowledge_key in sorted_terms:
+            # Исключаем термины, которые ведут к текущей статье
+            if current_article_key and knowledge_key == current_article_key:
+                continue
+                
             if knowledge_key in knowledge:
                 # Создаем паттерн для поиска термина (игнорируя регистр, с границами слов)
                 pattern = r'\b' + re.escape(term) + r'\b'
                 
-                # Заменяем только первое вхождение, если оно есть
-                match = re.search(pattern, result_text, flags=re.IGNORECASE)
-                if match:
+                # Ищем все вхождения термина
+                matches = list(re.finditer(pattern, result_text, flags=re.IGNORECASE))
+                
+                for match in reversed(matches):  # Обрабатываем с конца, чтобы не сбить позиции
+                    start_pos = match.start()
+                    end_pos = match.end()
                     matched_text = match.group(0)
+                    
+                    # Проверяем, не находится ли термин в заголовке
+                    # Ищем начало строки перед термином
+                    line_start = result_text.rfind('\n', 0, start_pos)
+                    if line_start == -1:
+                        line_start = 0
+                    else:
+                        line_start += 1  # Переходим на символ после \n
+                    
+                    # Извлекаем строку с термином
+                    line_end = result_text.find('\n', start_pos)
+                    if line_end == -1:
+                        line_end = len(result_text)
+                    
+                    current_line = result_text[line_start:line_end]
+                    
+                    # Проверяем признаки заголовка:
+                    # 1. Строка содержит ** (жирный текст)
+                    # 2. Строка начинается с эмодзи и содержит ЗАГЛАВНЫЕ БУКВЫ
+                    # 3. Строка короткая (до 100 символов) и содержит много заглавных букв
+                    is_header = (
+                        '**' in current_line or  # Markdown заголовок
+                        (len(current_line) < 100 and 
+                         current_line.count(current_line.upper()) > len(current_line) * 0.3) or  # Много заглавных
+                        (current_line.strip().startswith(('🌸', '💪', '🧠', '🎯', '🔄', '🌟', '💫', '✨')) and 
+                         any(c.isupper() for c in current_line))  # Начинается с эмодзи и есть заглавные
+                    )
+                    
+                    # Если это заголовок, пропускаем
+                    if is_header:
+                        continue
+                    
                     # Создаем команду из ключа знаний
                     command_key = knowledge_key.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('-', '_')
                     command_link = f"/knowledge_{command_key}"
-                    result_text = result_text[:match.start()] + command_link + result_text[match.end():]
+                    result_text = result_text[:start_pos] + command_link + result_text[end_pos:]
                     
-                    # После замены прерываем поиск других терминов, чтобы избежать множественных замен
-                    break
+                    # После первой замены выходим из цикла терминов
+                    return result_text
         
         return result_text
         
@@ -1270,12 +1383,12 @@ def find_knowledge_by_key(key):
     logger.warning(f"Ключ не найден: '{original_key}' (норм: '{normalized_key}')")
     return None
 
-def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown', enhance_links=True):
-    """Безопасная отправка сообщения с автоматическим определением режима и обогащением ссылками"""
+def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown', enhance_links=False, current_article_key=None):
+    """Безопасная отправка сообщения с автоматическим определением режима"""
     try:
-        # Обогащаем текст ссылками на ключевые слова
-        if enhance_links and parse_mode == 'Markdown':
-            text = enhance_text_with_links(text)
+        # Временно отключаем обогащение ссылками - переходим на inline кнопки
+        # if enhance_links and parse_mode == 'Markdown':
+        #     text = enhance_text_with_links(text, current_article_key=current_article_key)
         
         # Для длинных текстов или текстов с большим количеством спецсимволов отключаем Markdown
         if len(text) > 3000 or text.count('*') > 50 or text.count('_') > 50:
@@ -1833,11 +1946,14 @@ def handle_message(message):
         update_user_progress(user.id, 'topic_read', user_message)
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Отправляем полный текст сразу с автоматическими ссылками (enhance_links=True по умолчанию)
+        # Отправляем полный текст с автоматическими ссылками
+        response_text = f"📋 **{user_message}**\n\n{knowledge}"
         send_safe_message(
             message.chat.id,
-            f"📋 **{user_message}**\n\n{knowledge}",
-            parse_mode='Markdown'
+            response_text,
+            parse_mode='Markdown',
+            enhance_links=True,
+            current_article_key=user_message
         )
         return
     
@@ -1853,8 +1969,11 @@ def handle_message(message):
     # Вызываем AI (может занять время) - передаем chat_id для автоматического индикатора typing
     ai_response = ask_deepseek(user_message, chat_id=message.chat.id)
     
-    # AI ответ также обогащается ссылками автоматически
-    send_safe_message(message.chat.id, ai_response)
+    # Генерируем inline кнопки на основе содержимого AI ответа
+    related_markup = generate_related_buttons(ai_response)
+    
+    # AI ответ отправляется с inline кнопками связанных статей
+    send_safe_message(message.chat.id, ai_response, reply_markup=related_markup)
 
 @bot.message_handler(commands=['progress'])
 def handle_progress_command(message):
@@ -1926,20 +2045,73 @@ def handle_knowledge_command(message):
             article = knowledge[found_key]
             
             response = f"📖 **{found_key.upper()}**\n\n{article}"
-            send_safe_message(message.chat.id, response, enhance_links=False)
             
-            # Предлагаем дополнительные действия
-            keyboard = telebot.types.InlineKeyboardMarkup()
-            keyboard.add(telebot.types.InlineKeyboardButton("🔍 Найти ещё", callback_data=f"search_{found_key[:20]}"))
-            keyboard.add(telebot.types.InlineKeyboardButton("📚 Вся база знаний", callback_data="knowledge_all"))
+            # Генерируем inline кнопки со связанными статьями
+            related_markup = generate_related_buttons(article, knowledge, found_key)
             
-            bot.send_message(message.chat.id, "💡 Что хотите сделать дальше?", reply_markup=keyboard)
+            send_safe_message(message.chat.id, response, reply_markup=related_markup)
         else:
             send_safe_message(message.chat.id, "❌ Статья не найдена. Используйте команду /search для поиска по базе знаний.")
             
     except Exception as e:
         logger.error(f"Ошибка в обработчике knowledge команд: {e}")
         send_safe_message(message.chat.id, "❌ Произошла ошибка при загрузке статьи.")
+
+# ==================== ОБРАБОТЧИК INLINE КНОПОК ====================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('knowledge_'))
+def handle_inline_knowledge_button(call):
+    """Обработчик inline кнопок со ссылками на статьи базы знаний"""
+    try:
+        # Извлекаем ключ статьи из callback_data
+        command_key = call.data.replace('knowledge_', '')
+        
+        # Денормализуем ключ обратно к исходному названию статьи
+        key_mapping = {
+            'что_такое_система_сеплица': 'что такое система сеплица',
+            'ступень_1_сцепление': 'ступень 1 сцепление',
+            'ступень_2_естественность': 'ступень 2 естественность',
+            'ступень_3_питание': 'ступень 3 питание',
+            'ступень_4_забота_о_клетках': 'ступень 4 забота о клетках',
+            'nmn_никотинамидмононуклеотид': 'NMN (НИКОТИНАМИДМОНОНУКЛЕОТИД)',
+            'омега_3_с_упором_на_dha': 'Омега-3 с упором на dha',
+            'кверцетин': 'КВЕРЦЕТИН',
+            'ghk_cu': 'GHK-Cu'
+        }
+        
+        found_key = key_mapping.get(command_key)
+        
+        if not found_key:
+            # Пробуем найти по частичному соответствию
+            knowledge = load_knowledge()
+            for key in knowledge.keys():
+                normalized = key.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('-', '_')
+                if normalized == command_key:
+                    found_key = key
+                    break
+        
+        if found_key:
+            knowledge = load_knowledge()
+            if found_key in knowledge:
+                # Отвечаем на callback
+                bot.answer_callback_query(call.id, "📖 Загружаю статью...")
+                
+                response = f"📖 **{found_key}**\n\n{knowledge[found_key]}"
+                
+                # Генерируем связанные кнопки для этой статьи
+                related_markup = generate_related_buttons(knowledge[found_key], knowledge, found_key)
+                
+                send_safe_message(call.message.chat.id, response, reply_markup=related_markup)
+                
+                logger.info(f"👤 {call.from_user.username or 'Unknown'} открыл статью '{found_key}' через inline кнопку")
+            else:
+                bot.answer_callback_query(call.id, "❌ Статья не найдена", show_alert=True)
+        else:
+            bot.answer_callback_query(call.id, "❌ Статья не найдена", show_alert=True)
+            
+    except Exception as e:
+        logger.error(f"Ошибка в обработчике inline кнопок: {e}")
+        bot.answer_callback_query(call.id, "❌ Произошла ошибка", show_alert=True)
 
 # ==================== ЗАПУСК БОТА ====================
 def ensure_clean_start():
