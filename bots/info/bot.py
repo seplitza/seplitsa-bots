@@ -421,7 +421,7 @@ def collect_user_data_step_by_step(user_id, answer):
             profile['step'] = 'financial'
             save_user_data()
         
-        logger.info(f"📊 Сбор данных для {user_id}: текущий шаг='{current_step}', ответ='{answer}' [BUILD: 47530a3]")
+        logger.info(f"📊 Сбор данных для {user_id}: текущий шаг='{current_step}', ответ='{answer}' [BUILD: 230de2f]")
         
         # Словарь валидации для каждого шага
         step_validation = {
@@ -506,7 +506,10 @@ def collect_user_data_step_by_step(user_id, answer):
         profile['step'] = next_step
         save_user_data()  # Сохраняем после каждого шага
         
-        next_keyboard = step_validation[next_step].get('keyboard', lambda: None)()
+        next_keyboard_func = step_validation[next_step].get('keyboard', lambda: None)
+        next_keyboard = next_keyboard_func()
+        logger.info(f"🎹 Показываем клавиатуру для шага '{next_step}': функция={next_keyboard_func.__name__ if hasattr(next_keyboard_func, '__name__') else 'lambda'}")
+        
         return step_validation[next_step]['next_message'], next_keyboard
         
     except Exception as e:
