@@ -177,6 +177,7 @@ def create_main_menu_button():
     """Создает клавиатуру с одной кнопкой возврата в главное меню"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     keyboard.add(KeyboardButton('🏠 Главное меню'))
+    keyboard.add(KeyboardButton('🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'))
     return keyboard
 
 def create_financial_keyboard():
@@ -184,6 +185,7 @@ def create_financial_keyboard():
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add(KeyboardButton('Экономлю'), KeyboardButton('Стабильно'))
     keyboard.add(KeyboardButton('Могу позволить себе многое'), KeyboardButton('Не ограничен'))
+    keyboard.add(KeyboardButton('🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'))
     return keyboard
 
 def create_motivation_keyboard():
@@ -191,6 +193,7 @@ def create_motivation_keyboard():
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add(KeyboardButton('Только знакомлюсь'), KeyboardButton('Готов изучать'))
     keyboard.add(KeyboardButton('Очень настроен'), KeyboardButton('Уже работаю над собой'))
+    keyboard.add(KeyboardButton('🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'))
     return keyboard
 
 def create_menu(menu_key='main'):
@@ -432,7 +435,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'keyboard': create_main_menu_button
             },
             'city': {
-                'validate': lambda x: len(x.strip()) >= 2 and x not in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен', 'Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой'],
+                'validate': lambda x: len(x.strip()) >= 2 and x.strip() not in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен', 'Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой'],
                 'error': "🤔 Пожалуйста, введите корректное название города:",
                 'next': 'financial',
                 'success': lambda x: x.strip(),
