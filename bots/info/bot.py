@@ -447,7 +447,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'next': 'financial',
                 'success': lambda x: x.strip(),
                 'next_message': "💰 Как бы вы оценили свое финансовое положение?",
-                'keyboard': create_financial_keyboard
+                'keyboard': create_main_menu_button
             },
             'financial': {
                 'validate': lambda x: x in ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен'],
@@ -462,6 +462,7 @@ def collect_user_data_step_by_step(user_id, answer):
                 'error': "🎯 Пожалуйста, выберите из предложенных вариантов:",
                 'next': 'complete',
                 'success': lambda x: x,
+                'next_message': "✅ Отлично! Давайте проверим ваши данные:",
                 'keyboard': create_motivation_keyboard
             }
         }
@@ -506,11 +507,17 @@ def collect_user_data_step_by_step(user_id, answer):
         profile['step'] = next_step
         save_user_data()  # Сохраняем после каждого шага
         
-        next_keyboard_func = step_validation[next_step].get('keyboard', lambda: None)
-        next_keyboard = next_keyboard_func()
-        logger.info(f"🎹 Показываем клавиатуру для шага '{next_step}': функция={next_keyboard_func.__name__ if hasattr(next_keyboard_func, '__name__') else 'lambda'}")
-        
-        return step_validation[next_step]['next_message'], next_keyboard
+        # Получаем клавиатуру для следующего шага
+        next_step_config = step_validation.get(next_step)
+        if next_step_config:
+            next_keyboard_func = next_step_config.get('keyboard', lambda: None)
+            next_keyboard = next_keyboard_func()
+            next_message = next_step_config.get('next_message', '')
+            logger.info(f"🎹 Показываем клавиатуру для шага '{next_step}': функция={next_keyboard_func.__name__ if hasattr(next_keyboard_func, '__name__') else 'lambda'}")
+            return next_message, next_keyboard
+        else:
+            logger.error(f"❌ Не найдена конфигурация для шага '{next_step}'")
+            return "Произошла ошибка при переходе к следующему шагу.", None
         
     except Exception as e:
         logger.error(f"Ошибка в сборе данных: {e}")
