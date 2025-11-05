@@ -264,12 +264,16 @@ GOOGLE_SHEET_NAME = "Сеплица - База подписчиков"
 
 # ==================== ЗВАНИЯ И ТРЕБОВАНИЯ ====================
 USER_RANKS = {
-    'novice': '👶 Новичок',
+    'interested': '🌱 Интересующийся Сеплицей',
+    'novice': '👶 Сеплица-Неофит',
     'knowledgeable': '📚 Знаток',
     'expert': '🎓 Эксперт'
 }
 
 RANK_REQUIREMENTS = {
+    'interested': {
+        'data_collected': True  # Просто заполнить анкету
+    },
     'knowledgeable': {
         'menus_visited': 3,
         'topics_read': 5,
@@ -283,15 +287,79 @@ RANK_REQUIREMENTS = {
 }
 
 # ==================== СИСТЕМА СБОРА ДАННЫХ ====================
+def validate_user_data(user_id):
+    """Проверяет корректность собранных данных"""
+    if user_id not in user_data:
+        return False, []
+    
+    profile = user_data[user_id]
+    errors = []
+    
+    # Проверяем корректность финансового положения
+    valid_financial = ['Экономлю', 'Стабильно', 'Могу позволить себе многое', 'Не ограничен']
+    if 'financial' in profile and profile['financial'] not in valid_financial:
+        errors.append('financial')
+    
+    # Проверяем корректность мотивации
+    valid_motivation = ['Только знакомлюсь', 'Готов изучать', 'Очень настроен', 'Уже работаю над собой']
+    if 'motivation' in profile and profile['motivation'] not in valid_motivation:
+        errors.append('motivation')
+    
+    # Проверяем, что город - это не ответ из других вопросов
+    if 'city' in profile:
+        city = profile['city']
+        if city in valid_financial or city in valid_motivation:
+            errors.append('city')
+    
+    return len(errors) == 0, errors
+
 def is_user_profile_complete(user_id):
-    """Проверяет, завершена ли анкета пользователя"""
+    """Проверяет, завершена ли анкета пользователя корректно"""
     if user_id not in user_data:
         return False
     
     required_fields = ['name', 'age', 'city', 'financial', 'motivation']
     user_profile = user_data[user_id]
     
-    return all(field in user_profile for field in required_fields)
+    # Проверяем наличие всех полей
+    if not all(field in user_profile for field in required_fields):
+        return False
+    
+    # Проверяем корректность данных
+    is_valid, _ = validate_user_data(user_id)
+    return is_valid
+
+def fix_incorrect_data(user_id):
+    """Исправляет некорректные данные и возвращает с какого шага продолжить"""
+    is_valid, errors = validate_user_data(user_id)
+    if is_valid:
+        return None
+    
+    profile = user_data[user_id]
+    
+    # Если город некорректный, начинаем с города
+    if 'city' in errors:
+        profile['step'] = 'city'
+        return 'city'
+    
+    # Если финансы некорректные, начинаем с финансов
+    if 'financial' in errors:
+        profile['step'] = 'financial'
+        # Очищаем некорректные данные
+        if 'financial' in profile:
+            del profile['financial']
+        if 'motivation' in profile:
+            del profile['motivation']
+        return 'financial'
+    
+    # Если мотивация некорректная, начинаем с мотивации
+    if 'motivation' in errors:
+        profile['step'] = 'motivation'
+        if 'motivation' in profile:
+            del profile['motivation']
+        return 'motivation'
+    
+    return None
 
 def collect_user_data_step_by_step(user_id, answer):
     """Пошаговый сбор данных пользователя"""
@@ -375,11 +443,18 @@ def collect_user_data_step_by_step(user_id, answer):
         if next_step == 'complete':
             profile['data_collected'] = True
             profile['step'] = 'complete'
+            
+            # Присваиваем звание "Интересующийся Сеплицей"
+            if user_id in user_progress:
+                user_progress[user_id]['current_rank'] = 'interested'
+                user_progress[user_id]['data_collected'] = True
+            
             save_user_data()
             set_data_collection_mode(user_id, False)
             
             completion_text = (
                 "✅ Отлично! Анкета заполнена.\n\n"
+                "🌱 Вам присвоено звание: **Интересующийся Сеплицей**\n\n"
                 "🎯 Теперь я смогу давать вам более персонализированные рекомендации.\n\n"
                 "💡 Вы всегда можете продолжить изучение системы через меню!"
             )
@@ -529,7 +604,7 @@ MENU_STRUCTURE = {
             'nmn (никотинамидмононуклеотид)',
             'омега-3 с упором на dha',
             'ресвератрол',
-            'кверцeтин',
+            'кверцетин',
             'косметика с ghk-cu (медный трипептид-1)',
             'как выбирать качественные добавки',
             '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'
@@ -1228,21 +1303,60 @@ def handle_fill_profile(message):
     """Команда для принудительного заполнения анкеты"""
     user_id = message.from_user.id
     
+    # Проверяем, заполнена ли анкета корректно
     if is_user_profile_complete(user_id):
-        send_safe_message(message.chat.id, "✅ Ваш профиль уже заполнен!")
+        send_safe_message(message.chat.id, "✅ Ваш профиль уже заполнен корректно!")
         return
     
+    # Проверяем, есть ли ошибки в данных
+    is_valid, errors = validate_user_data(user_id)
+    if not is_valid and errors:
+        # Исправляем некорректные данные
+        error_step = fix_incorrect_data(user_id)
+        set_data_collection_mode(user_id, True)
+        
+        error_messages = {
+            'city': "🔄 Обнаружена ошибка: город указан некорректно.\n\n🌍 В каком городе вы живете?",
+            'financial': "🔄 Обнаружена ошибка в финансовом положении.\n\n💰 Как бы вы оценили свое финансовое положение?",
+            'motivation': "🔄 Обнаружена ошибка в уровне мотивации.\n\n🎯 Насколько вы настроены на работу над собой?"
+        }
+        
+        message_text = error_messages.get(error_step, "🔄 Давайте уточним некоторые данные.")
+        
+        # Подбираем клавиатуру
+        keyboard_map = {
+            'financial': create_financial_keyboard(),
+            'motivation': create_motivation_keyboard(),
+            'city': create_main_menu_button()
+        }
+        keyboard = keyboard_map.get(error_step, create_main_menu_button())
+        
+        send_safe_message(message.chat.id, message_text, reply_markup=keyboard)
+        return
+    
+    # Если анкета не заполнена вообще, начинаем с начала
     set_data_collection_mode(user_id, True)
     send_safe_message(message.chat.id, 
                      "📝 Давайте заполним вашу анкету для персонализированных рекомендаций!\n\n"
-                     "Как вас зовут?")
+                     "Как вас зовут?",
+                     reply_markup=create_main_menu_button())
 
 @bot.message_handler(func=lambda message: is_data_collection_mode(message.from_user.id))
 def handle_data_collection(message):
     """Обработчик сбора данных пользователя"""
     user_id = message.from_user.id
+    user = message.from_user
     user_message = message.text.strip()
     logger.info(f"Обработка данных от {user_id}: '{user_message}'")
+    
+    # Сохраняем telegram username и имя при первом обращении
+    if user_id not in user_data:
+        user_data[user_id] = {
+            'telegram_username': user.username,
+            'telegram_first_name': user.first_name,
+            'telegram_last_name': user.last_name
+        }
+    
     if (message.text.startswith('/') or 
         user_message in ['🏠 Главное меню', '🔙 НАЗАД В ГЛАВНОЕ МЕНЮ'] or
         any(user_message in menu['buttons'] for menu in MENU_STRUCTURE.values())):
