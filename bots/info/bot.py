@@ -310,16 +310,16 @@ def create_knowledge_links(text, knowledge=None):
         return text
 
 def enhance_text_with_links(text, knowledge=None):
-    """Обогащает текст ссылками на ключевые слова из базы знаний"""
+    """Обогащает текст ссылками на ключевые слова из базы знаний через команды бота"""
     try:
         if not knowledge:
             knowledge = load_knowledge()
         
-        # Если в тексте уже есть ссылки, не обрабатываем его
-        if '[' in text and '](' in text:
+        # Если в тексте уже есть ссылки или команды, не обрабатываем его
+        if '[' in text and '](' in text or '/knowledge_' in text:
             return text
             
-        # Список ключевых терминов для превращения в ссылки
+        # Список ключевых терминов для превращения в команды
         key_terms = {
             'система сеплица': 'что такое система сеплица',
             'сцепление': 'ступень 1 сцепление',
@@ -354,10 +354,12 @@ def enhance_text_with_links(text, knowledge=None):
                 match = re.search(pattern, result_text, flags=re.IGNORECASE)
                 if match:
                     matched_text = match.group(0)
-                    link = f"[{matched_text}](#{knowledge_key})"
-                    result_text = result_text[:match.start()] + link + result_text[match.end():]
+                    # Создаем команду из ключа знаний
+                    command_key = knowledge_key.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('-', '_')
+                    command_link = f"/knowledge_{command_key}"
+                    result_text = result_text[:match.start()] + command_link + result_text[match.end():]
                     
-                    # После замены прерываем поиск других терминов, чтобы избежать вложенных ссылок
+                    # После замены прерываем поиск других терминов, чтобы избежать множественных замен
                     break
         
         return result_text
@@ -1895,6 +1897,49 @@ def handle_rank_command(message):
     )
     
     send_safe_message(message.chat.id, rank_text)
+
+@bot.message_handler(func=lambda message: message.text and message.text.startswith('/knowledge_'))
+def handle_knowledge_command(message):
+    """Обработчик команд knowledge_ для быстрого доступа к статьям базы знаний"""
+    try:
+        # Извлекаем ключ из команды
+        command = message.text[1:]  # Убираем /
+        if not command.startswith('knowledge_'):
+            return
+            
+        knowledge_key_part = command[10:]  # Убираем 'knowledge_'
+        
+        # Загружаем базу знаний
+        knowledge = load_knowledge()
+        
+        # Ищем подходящую статью
+        found_key = None
+        for key in knowledge.keys():
+            # Создаем команду из ключа для сравнения
+            normalized_key = key.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('-', '_')
+            if normalized_key == knowledge_key_part:
+                found_key = key
+                break
+        
+        if found_key:
+            # Отправляем статью
+            article = knowledge[found_key]
+            
+            response = f"📖 **{found_key.upper()}**\n\n{article}"
+            send_safe_message(message.chat.id, response, enhance_links=False)
+            
+            # Предлагаем дополнительные действия
+            keyboard = telebot.types.InlineKeyboardMarkup()
+            keyboard.add(telebot.types.InlineKeyboardButton("🔍 Найти ещё", callback_data=f"search_{found_key[:20]}"))
+            keyboard.add(telebot.types.InlineKeyboardButton("📚 Вся база знаний", callback_data="knowledge_all"))
+            
+            bot.send_message(message.chat.id, "💡 Что хотите сделать дальше?", reply_markup=keyboard)
+        else:
+            send_safe_message(message.chat.id, "❌ Статья не найдена. Используйте команду /search для поиска по базе знаний.")
+            
+    except Exception as e:
+        logger.error(f"Ошибка в обработчике knowledge команд: {e}")
+        send_safe_message(message.chat.id, "❌ Произошла ошибка при загрузке статьи.")
 
 # ==================== ЗАПУСК БОТА ====================
 def ensure_clean_start():
