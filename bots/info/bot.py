@@ -497,7 +497,7 @@ DATA_DIR = os.getenv('SEPLITSA_DATA_DIR', '.')
 # Knowledge base stays in project directory (persistent)
 KNOWLEDGE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
 
-KNOWLEDGE_FILE = os.path.join(KNOWLEDGE_DIR, "info_knowledge.json.example")
+KNOWLEDGE_FILE = os.path.join(KNOWLEDGE_DIR, "info_knowledge.json")
 USER_DATA_FILE = os.path.join(DATA_DIR, "seplitsa_info_user_data.json")
 
 # Настройки Google Sheets
