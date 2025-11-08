@@ -213,7 +213,7 @@ def create_author_menu(menu_key='main'):
     keyboard, title = create_menu(menu_key)
     if menu_key == 'main':
         keyboard.add(KeyboardButton('🔧 Обучение'))
-        keyboard.add(KeyboardButton('👥 Подписчики'))
+        keyboard.add(KeyboardButton('👥 Подписчики'), KeyboardButton('📊 Тест Google Sheets'))
     return keyboard, title
 
 def create_teaching_keyboard():
@@ -541,7 +541,7 @@ KNOWLEDGE_FILE = os.path.join(KNOWLEDGE_DIR, "info_knowledge.json")
 USER_DATA_FILE = os.path.join(DATA_DIR, "seplitsa_info_user_data.json")
 
 # Настройки Google Sheets
-GOOGLE_SHEETS_CREDENTIALS = os.path.join(DATA_DIR, "seplitsa-credentials.json")  # Файл с ключами API
+GOOGLE_SHEETS_CREDENTIALS = os.path.join(KNOWLEDGE_DIR, "seplitsa-credentials.json")  # Файл с ключами API
 GOOGLE_SHEET_NAME = "Сеплица - База подписчиков"
 
 # ==================== ЗВАНИЯ И ТРЕБОВАНИЯ ====================
@@ -1371,6 +1371,66 @@ def log_new_subscriber(user):
         logger.error(f"❌ Ошибка записи в файл подписчиков: {e}")
 
 # ==================== GOOGLE SHEETS ИНТЕГРАЦИЯ ====================
+def create_google_sheet_if_not_exists(client):
+    """Создает Google Sheets таблицу если она не существует"""
+    try:
+        # Пытаемся открыть существующую таблицу
+        sheet = client.open(GOOGLE_SHEET_NAME)
+        logger.info(f"✅ Таблица '{GOOGLE_SHEET_NAME}' уже существует")
+        return sheet.sheet1
+    except gspread.SpreadsheetNotFound:
+        # Создаем новую таблицу
+        logger.info(f"📊 Создаем новую таблицу '{GOOGLE_SHEET_NAME}'")
+        sheet = client.create(GOOGLE_SHEET_NAME)
+        
+        # Делаем таблицу доступной для редактирования (необязательно)
+        # sheet.share('your-email@gmail.com', perm_type='user', role='writer')
+        
+        worksheet = sheet.sheet1
+        
+        # Создаем заголовки
+        headers = [
+            'Дата регистрации',
+            'ID пользователя', 
+            'Username',
+            'Имя',
+            'Фамилия',
+            'Возраст',
+            'Пол',
+            'Посещение спортзала',
+            'Частота тренировок',
+            'Тип телефона',
+            'Финансовый статус',
+            'Уровень мотивации',
+            'Текущее звание',
+            'Язык',
+            'Источник',
+            'Последняя активность'
+        ]
+        
+        # Устанавливаем заголовки
+        worksheet.append_row(headers)
+        
+        # Форматируем заголовки (делаем жирными)
+        worksheet.format('1:1', {
+            "textFormat": {
+                "bold": True,
+                "fontSize": 11
+            },
+            "backgroundColor": {
+                "red": 0.9,
+                "green": 0.9,
+                "blue": 0.9
+            }
+        })
+        
+        logger.info(f"✅ Таблица '{GOOGLE_SHEET_NAME}' создана успешно")
+        return worksheet
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания таблицы: {e}")
+        return None
+
 def save_to_google_sheets(user_info):
     """Сохранение данных пользователя в Google Sheets"""
     try:
@@ -1384,8 +1444,10 @@ def save_to_google_sheets(user_info):
         creds = Credentials.from_service_account_file(GOOGLE_SHEETS_CREDENTIALS, scopes=scope)
         client = gspread.authorize(creds)
         
-        # Открываем таблицу
-        sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+        # Создаем или открываем таблицу
+        worksheet = create_google_sheet_if_not_exists(client)
+        if not worksheet:
+            return False
         
         # Подготавливаем данные
         row_data = [
@@ -1402,11 +1464,13 @@ def save_to_google_sheets(user_info):
             user_info.get('financial_status', ''),
             user_info.get('motivation_level', ''),
             user_info.get('current_rank', ''),
-            user_info.get('registration_date', '')
+            user_info.get('language_code', ''),
+            'Telegram Bot',  # Источник
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Последняя активность
         ]
         
         # Добавляем строку
-        sheet.append_row(row_data)
+        worksheet.append_row(row_data)
         logger.info(f"✅ Данные пользователя {user_info.get('user_id')} сохранены в Google Sheets")
         return True
         
@@ -1757,6 +1821,53 @@ def show_recent_subscribers(message):
     
     _show_subscribers_list(message)
 
+@bot.message_handler(commands=['test_sheets', 'тест_таблиц'])
+def test_google_sheets(message):
+    """Тестирование интеграции с Google Sheets (только для автора)"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта команда доступна только автору системы.")
+        return
+    
+    try:
+        # Тестовые данные
+        test_user_info = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'user_id': '999999999',
+            'username': 'test_user',
+            'first_name': 'Тестовый',
+            'last_name': 'Пользователь',
+            'age': '25',
+            'gender': 'Мужской',
+            'gym_attendance': 'Да',
+            'gym_frequency': '3-4 раза в неделю',
+            'phone_type': 'iPhone',
+            'financial_status': 'Средний доход',
+            'motivation_level': 'Высокий',
+            'current_rank': '👶 Сеплица-Неофит',
+            'language_code': 'ru'
+        }
+        
+        bot.send_message(message.chat.id, "🔄 Тестируем интеграцию с Google Sheets...")
+        
+        success = save_to_google_sheets(test_user_info)
+        
+        if success:
+            bot.send_message(message.chat.id, 
+                           "✅ **Тест Google Sheets успешен!**\n\n"
+                           "Тестовая запись добавлена в таблицу.\n"
+                           f"Название таблицы: `{GOOGLE_SHEET_NAME}`", 
+                           parse_mode='Markdown')
+        else:
+            bot.send_message(message.chat.id, 
+                           "❌ **Тест Google Sheets неудачен!**\n\n"
+                           "Проверьте:\n"
+                           "• Файл учетных данных\n"
+                           "• Права доступа\n"
+                           "• Название таблицы")
+            
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Ошибка тестирования: {str(e)}")
+
 @bot.message_handler(func=lambda message: message.text == '👥 Подписчики')
 def subscribers_button(message):
     """Обработчик кнопки подписчики"""
@@ -1765,6 +1876,15 @@ def subscribers_button(message):
         return
     
     _show_subscribers_list(message)
+
+@bot.message_handler(func=lambda message: message.text == '📊 Тест Google Sheets')
+def test_sheets_button(message):
+    """Обработчик кнопки тестирования Google Sheets"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта функция доступна только автору системы.")
+        return
+    
+    test_google_sheets(message)
 
 def _show_subscribers_list(message):
     """Внутренняя функция для показа списка подписчиков"""
