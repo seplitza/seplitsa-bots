@@ -209,10 +209,11 @@ def create_menu(menu_key='main'):
     return keyboard, menu['title']
 
 def create_author_menu(menu_key='main'):
-    """Создает меню для автора с дополнительной кнопкой обучения"""
+    """Создает меню для автора с дополнительными кнопками"""
     keyboard, title = create_menu(menu_key)
     if menu_key == 'main':
         keyboard.add(KeyboardButton('🔧 Обучение'))
+        keyboard.add(KeyboardButton('👥 Подписчики'))
     return keyboard, title
 
 def create_teaching_keyboard():
@@ -1337,6 +1338,38 @@ def get_user_progress_stats(user_id):
         'details_clicks': progress['details_clicks']
     }
 
+# ==================== ОТСЛЕЖИВАНИЕ НОВЫХ ПОДПИСЧИКОВ ====================
+def log_new_subscriber(user):
+    """Логирование нового подписчика"""
+    user_id = user.id
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Базовая информация о пользователе
+    user_info = {
+        'timestamp': timestamp,
+        'user_id': user_id,
+        'username': user.username or 'Не указано',
+        'first_name': user.first_name or 'Не указано', 
+        'last_name': user.last_name or 'Не указано',
+        'language_code': user.language_code or 'Не указано',
+        'is_bot': user.is_bot,
+        'registration_date': timestamp
+    }
+    
+    # Логируем в консоль
+    logger.info(f"🆕 НОВЫЙ ПОДПИСЧИК: {user_info['first_name']} {user_info['last_name']} (@{user_info['username']}) | ID: {user_id}")
+    
+    # Сохраняем в Google Sheets (если настроено)
+    save_to_google_sheets(user_info)
+    
+    # Можно также сохранить в локальный файл для бэкапа
+    try:
+        subscribers_file = os.path.join(DATA_DIR, "new_subscribers.txt")
+        with open(subscribers_file, 'a', encoding='utf-8') as f:
+            f.write(f"{timestamp} | {user_id} | @{user_info['username']} | {user_info['first_name']} {user_info['last_name']}\n")
+    except Exception as e:
+        logger.error(f"❌ Ошибка записи в файл подписчиков: {e}")
+
 # ==================== GOOGLE SHEETS ИНТЕГРАЦИЯ ====================
 def save_to_google_sheets(user_info):
     """Сохранение данных пользователя в Google Sheets"""
@@ -1649,8 +1682,19 @@ def should_initiate_data_collection(user_id, user_message):
 def send_welcome(message):
     """Приветственное сообщение с меню"""
     user_id = message.from_user.id
+    
+    # Проверяем, новый ли это пользователь
+    is_new_user = user_id not in user_progress
+    
     set_user_menu(user_id, 'main')
     set_teaching_mode(user_id, False)  # Выходим из режима обучения
+    
+    # Инициализируем прогресс пользователя (это создает запись если её нет)
+    init_user_progress(user_id)
+    
+    # Если это новый пользователь, логируем подписку
+    if is_new_user and not is_author(message.from_user):
+        log_new_subscriber(message.from_user)
     
     if is_author(message.from_user):
         keyboard, title = create_author_menu('main')
@@ -1703,6 +1747,72 @@ def teach_mode(message):
         bot.send_message(message.chat.id, "⛔ Эта функция доступна только автору системы.")
         return
     teach_command(message)
+
+@bot.message_handler(commands=['subscribers', 'подписчики'])
+def show_recent_subscribers(message):
+    """Показать последних подписчиков (только для автора)"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта команда доступна только автору системы.")
+        return
+    
+    _show_subscribers_list(message)
+
+@bot.message_handler(func=lambda message: message.text == '👥 Подписчики')
+def subscribers_button(message):
+    """Обработчик кнопки подписчики"""
+    if not is_author(message.from_user):
+        bot.send_message(message.chat.id, "⛔ Эта функция доступна только автору системы.")
+        return
+    
+    _show_subscribers_list(message)
+
+def _show_subscribers_list(message):
+    """Внутренняя функция для показа списка подписчиков"""
+    try:
+        subscribers_file = os.path.join(DATA_DIR, "new_subscribers.txt")
+        
+        if not os.path.exists(subscribers_file):
+            bot.send_message(message.chat.id, "📭 Файл с подписчиками не найден. Пока новых подписчиков не было.")
+            return
+        
+        # Читаем последние 20 записей
+        with open(subscribers_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        if not lines:
+            bot.send_message(message.chat.id, "📭 Новых подписчиков пока не было.")
+            return
+        
+        # Берем последние 20 записей
+        recent_lines = lines[-20:]
+        recent_lines.reverse()  # Показываем от новых к старым
+        
+        response = "📊 **ПОСЛЕДНИЕ ПОДПИСЧИКИ** (макс. 20):\n\n"
+        
+        for i, line in enumerate(recent_lines, 1):
+            try:
+                parts = line.strip().split(' | ')
+                if len(parts) >= 4:
+                    timestamp = parts[0]
+                    user_id = parts[1] 
+                    username = parts[2]
+                    full_name = parts[3]
+                    
+                    # Форматируем дату
+                    date_str = timestamp.split(' ')[0]  # Берем только дату без времени
+                    
+                    response += f"{i}. {full_name} ({username})\n"
+                    response += f"   🆔 `{user_id}` | 📅 {date_str}\n\n"
+            except:
+                continue
+        
+        response += f"📈 Всего записей в файле: {len(lines)}"
+        
+        bot.send_message(message.chat.id, response, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка чтения файла подписчиков: {e}")
+        bot.send_message(message.chat.id, f"❌ Ошибка при получении списка подписчиков: {e}")
 
 @bot.message_handler(func=lambda message: message.text.lower() in ['показать', '📝 показать базу знаний'])
 def show_knowledge(message):
