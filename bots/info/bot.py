@@ -1364,7 +1364,7 @@ def log_new_subscriber(user):
     
     # Можно также сохранить в локальный файл для бэкапа
     try:
-        subscribers_file = os.path.join(DATA_DIR, "new_subscribers.txt")
+        subscribers_file = os.path.join(KNOWLEDGE_DIR, "new_subscribers.txt")
         with open(subscribers_file, 'a', encoding='utf-8') as f:
             f.write(f"{timestamp} | {user_id} | @{user_info['username']} | {user_info['first_name']} {user_info['last_name']}\n")
     except Exception as e:
@@ -1769,7 +1769,7 @@ def subscribers_button(message):
 def _show_subscribers_list(message):
     """Внутренняя функция для показа списка подписчиков"""
     try:
-        subscribers_file = os.path.join(DATA_DIR, "new_subscribers.txt")
+        subscribers_file = os.path.join(KNOWLEDGE_DIR, "new_subscribers.txt")
         
         if not os.path.exists(subscribers_file):
             bot.send_message(message.chat.id, "📭 Файл с подписчиками не найден. Пока новых подписчиков не было.")
