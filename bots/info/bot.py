@@ -1982,29 +1982,47 @@ def process_teaching(message):
         return
     
     try:
-        parts = message.text.split(':', 1)
-        if len(parts) == 2:
-            topic = parts[0].strip()
-            knowledge_text = parts[1].strip()
+        # Разделяем только по первому двоеточию в ПЕРВОЙ строке
+        lines = message.text.strip().split('\n', 1)
+        first_line = lines[0]
+        
+        # Проверяем что первая строка содержит двоеточие
+        if ':' not in first_line:
+            bot.send_message(message.chat.id, 
+                           "❌ Неверный формат. Первая строка должна быть:\n`ТЕМА: текст`",
+                           reply_markup=create_teaching_keyboard())
+            return
             
-            knowledge = load_knowledge()
-            knowledge[topic] = knowledge_text
-            if save_knowledge(knowledge):
-                logger.info(f"Знания обновлены: {topic}")
-                bot.send_message(message.chat.id, 
-                               f"✅ **Знания обновлены!**\n\n"
-                               f"**Тема:** {topic}\n"
-                               f"**Содержание:** {knowledge_text}\n\n"
-                               f"Продолжайте добавлять знания или нажмите '❌ Выйти из режима обучения'",
-                               reply_markup=create_teaching_keyboard(),
-                               parse_mode='Markdown')
-            else:
-                bot.send_message(message.chat.id, 
-                               "❌ Ошибка сохранения знаний",
-                               reply_markup=create_teaching_keyboard())
+        # Разделяем первую строку на тему и начало текста
+        topic, first_part = first_line.split(':', 1)
+        topic = topic.strip()
+        
+        # Собираем полный текст
+        if len(lines) > 1:
+            # Если есть еще строки, добавляем их
+            knowledge_text = first_part.strip() + '\n' + lines[1]
+        else:
+            knowledge_text = first_part.strip()
+            
+        # Сохраняем знания
+        knowledge = load_knowledge()
+        knowledge[topic] = knowledge_text
+        if save_knowledge(knowledge):
+            logger.info(f"Знания обновлены: {topic} ({len(knowledge_text)} символов)")
+            
+            # Формируем превью текста для подтверждения (не более 200 символов)
+            preview = knowledge_text[:200] + "..." if len(knowledge_text) > 200 else knowledge_text
+            
+            bot.send_message(message.chat.id, 
+                           f"✅ Знания обновлены!\n\n"
+                           f"Тема: {topic}\n\n"
+                           f"{preview}\n\n"
+                           f"Продолжайте добавлять знания или нажмите '❌ Выйти из режима обучения'",
+                           reply_markup=create_teaching_keyboard(),
+                           parse_mode='Markdown')
         else:
             bot.send_message(message.chat.id, 
-                           "❌ Неверный формат. Используйте:\n`ТЕМА: текст`",
+                           "❌ Ошибка сохранения знаний",
                            reply_markup=create_teaching_keyboard())
     except Exception as e:
         logger.error(f"Ошибка обучения: {e}")
