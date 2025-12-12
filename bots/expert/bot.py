@@ -336,34 +336,70 @@ def safe_markdown_text(text):
         # В случае ошибки возвращаем простой текст
         return re.sub(r'([*_`\\[\]])', '', text)
 
+def extract_video_file_id(text):
+    """Извлекает file_id видео из маркера [VIDEO:file_id]"""
+    pattern = r'\[VIDEO:([^\]]+)\]'
+    match = re.search(pattern, text)
+    if match:
+        return match.group(1)
+    return None
+
+def send_video_if_present(chat_id, text):
+    """Отправляет видео, если в тексте есть маркер [VIDEO:file_id]"""
+    file_id = extract_video_file_id(text)
+    if file_id:
+        try:
+            bot.send_video(chat_id, file_id)
+            logger.info(f"Видео отправлено с file_id: {file_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка отправки видео {file_id}: {e}")
+            return False
+    return False
+
 def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown'):
     """Безопасная отправка сообщения с автоматическим определением режима"""
     try:
+        # Сначала отправляем видео, если есть
+        send_video_if_present(chat_id, text)
+        
+        # Удаляем VIDEO маркер и "Содержание:" из текста
+        clean_text = re.sub(r'\[VIDEO:[^\]]+\]', '', text)
+        clean_text = re.sub(r'Содержание:\s*', '', clean_text)
+        clean_text = clean_text.strip()
+        
         # Если текст слишком длинный или содержит сложную разметку, отправляем как обычный текст
-        if len(text) > 3000 or text.count('*') > 50 or text.count('_') > 50:
-            return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=None)
+        if len(clean_text) > 3000 or clean_text.count('*') > 50 or clean_text.count('_') > 50:
+            return bot.send_message(chat_id, clean_text, reply_markup=reply_markup, parse_mode=None)
         else:
-            safe_text = safe_markdown_text(text)
+            safe_text = safe_markdown_text(clean_text)
             return bot.send_message(chat_id, safe_text, reply_markup=reply_markup, parse_mode=parse_mode)
             
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения: {e}")
         # Пробуем отправить без Markdown
         try:
-            return bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=None)
+            # Очищаем от VIDEO маркеров перед отправкой
+            clean_text = re.sub(r'\[VIDEO:[^\]]+\]', '', text)
+            clean_text = re.sub(r'Содержание:\s*', '', clean_text)
+            clean_text = clean_text.strip()
+            return bot.send_message(chat_id, clean_text, reply_markup=reply_markup, parse_mode=None)
         except Exception as e2:
             logger.error(f"Ошибка отправки без Markdown: {e2}")
             # Последняя попытка - разбиваем текст
-            if len(text) > 4000:
-                part1 = text[:4000]
-                part2 = text[4000:8000] if len(text) > 8000 else text[4000:]
+            clean_text = re.sub(r'\[VIDEO:[^\]]+\]', '', text)
+            clean_text = re.sub(r'Содержание:\s*', '', clean_text)
+            clean_text = clean_text.strip()
+            if len(clean_text) > 4000:
+                part1 = clean_text[:4000]
+                part2 = clean_text[4000:8000] if len(clean_text) > 8000 else clean_text[4000:]
                 bot.send_message(chat_id, part1, reply_markup=reply_markup, parse_mode=None)
                 if part2:
                     return bot.send_message(chat_id, part2, reply_markup=reply_markup, parse_mode=None)
             else:
                 # Убираем всю разметку и отправляем
-                clean_text = re.sub(r'[*_`\[\]]', '', text)
-                return bot.send_message(chat_id, clean_text, reply_markup=reply_markup, parse_mode=None)
+                final_text = re.sub(r'[*_`\[\]]', '', clean_text)
+                return bot.send_message(chat_id, final_text, reply_markup=reply_markup, parse_mode=None)
 
 
 # ==================== ФУНКЦИИ ОБРАБОТКИ ТЕКСТА ====================
