@@ -2261,6 +2261,59 @@ def handle_data_collection(message):
     else:
         send_safe_message(message.chat.id, "Пожалуйста, ответьте на предыдущий вопрос:")
 
+@bot.message_handler(content_types=['video', 'photo', 'document', 'audio', 'voice', 'video_note'])
+def handle_media_for_author(message):
+    """Обработчик медиа-файлов для автора (получение file_id)"""
+    user = message.from_user
+    
+    # Только для автора
+    if not is_author(user):
+        send_safe_message(message.chat.id, "❌ Отправка медиа не поддерживается. Задайте свой вопрос текстом.")
+        return
+    
+    # Определяем тип медиа и извлекаем file_id
+    media_type = message.content_type
+    file_id = None
+    info = ""
+    
+    if media_type == 'video':
+        video = message.video
+        file_id = video.file_id
+        duration = video.duration
+        size_mb = video.file_size / 1024 / 1024 if video.file_size else 0
+        info = f"⏱ Длительность: {duration}с\n📦 Размер: {size_mb:.2f} MB\n📐 Разрешение: {video.width}x{video.height}"
+    elif media_type == 'video_note':
+        video_note = message.video_note
+        file_id = video_note.file_id
+        info = f"⏱ Длительность: {video_note.length}с"
+    elif media_type == 'photo':
+        photo = message.photo[-1]
+        file_id = photo.file_id
+        size_kb = photo.file_size / 1024 if photo.file_size else 0
+        info = f"📦 Размер: {size_kb:.2f} KB\n📐 Разрешение: {photo.width}x{photo.height}"
+    elif media_type == 'document':
+        document = message.document
+        file_id = document.file_id
+        size_mb = document.file_size / 1024 / 1024 if document.file_size else 0
+        info = f"📄 Имя: {document.file_name}\n📦 Размер: {size_mb:.2f} MB"
+    elif media_type == 'audio':
+        audio = message.audio
+        file_id = audio.file_id
+        title = audio.title or "Без названия"
+        performer = audio.performer or "Неизвестен"
+        info = f"🎵 {performer} - {title}\n⏱ Длительность: {audio.duration}с"
+    elif media_type == 'voice':
+        voice = message.voice
+        file_id = voice.file_id
+        info = f"⏱ Длительность: {voice.duration}с"
+    
+    if file_id:
+        response = f"✅ FILE_ID ПОЛУЧЕН!\n\n📹 Тип: {media_type}\n{info}\n\n🔑 File ID:\n`{file_id}`\n\n📋 Для базы знаний:\n`[VIDEO:{file_id}]`"
+        send_safe_message(message.chat.id, response)
+        logger.info(f"📹 Автор получил file_id для {media_type}: {file_id[:30]}...")
+    else:
+        send_safe_message(message.chat.id, "❌ Не удалось получить file_id")
+
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     """Основной обработчик сообщений"""
