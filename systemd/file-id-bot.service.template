@@ -1,0 +1,25 @@
+[Unit]
+Description=Telegram File ID Bot
+After=network.target
+
+[Service]
+Type=simple
+User=seplitsa
+Group=seplitsa
+WorkingDirectory=/home/seplitsa/seplitsa-bots
+Environment=PATH=/home/seplitsa/seplitsa-bots/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/seplitsa/seplitsa-bots/venv/bin/python3 /home/seplitsa/seplitsa-bots/scripts/get_video_file_id.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Ограничения безопасности
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target
