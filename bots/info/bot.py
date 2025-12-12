@@ -2319,6 +2319,41 @@ def handle_message(message):
     """Основной обработчик сообщений"""
     user = message.from_user
     user_id = user.id
+    
+    # Проверяем наличие медиа у автора (даже если есть текст)
+    if is_author(user):
+        has_media = False
+        media_type = None
+        
+        if hasattr(message, 'video') and message.video:
+            has_media = True
+            media_type = 'video'
+            video = message.video
+            file_id = video.file_id
+            duration = video.duration
+            size_mb = video.file_size / 1024 / 1024 if video.file_size else 0
+            info = f"⏱ Длительность: {duration}с\n📦 Размер: {size_mb:.2f} MB\n📐 Разрешение: {video.width}x{video.height}"
+        elif hasattr(message, 'photo') and message.photo:
+            has_media = True
+            media_type = 'photo'
+            photo = message.photo[-1]
+            file_id = photo.file_id
+            size_kb = photo.file_size / 1024 if photo.file_size else 0
+            info = f"📦 Размер: {size_kb:.2f} KB\n📐 Разрешение: {photo.width}x{photo.height}"
+        elif hasattr(message, 'document') and message.document:
+            has_media = True
+            media_type = 'document'
+            document = message.document
+            file_id = document.file_id
+            size_mb = document.file_size / 1024 / 1024 if document.file_size else 0
+            info = f"📄 Имя: {document.file_name}\n📦 Размер: {size_mb:.2f} MB"
+        
+        if has_media:
+            response = f"✅ FILE_ID ПОЛУЧЕН!\n\n📹 Тип: {media_type}\n{info}\n\n🔑 File ID:\n`{file_id}`\n\n📋 Для базы знаний:\n`[VIDEO:{file_id}]`"
+            send_safe_message(message.chat.id, response)
+            logger.info(f"📹 Автор получил file_id для {media_type}: {file_id[:30]}...")
+            return
+    
     user_message = message.text.strip()
     logger.info(f"Получено сообщение от {user_id}: '{user_message}'")
     
