@@ -2,7 +2,7 @@
 """
 Telegram-бот для получения file_id видео и других медиа
 Использование: перешлите медиа боту, он вернет file_id
-Бот: @seplitza_fileid_bot
+Бот: @get_video_file_id_bot
 """
 
 import telebot
@@ -313,7 +313,7 @@ def handle_other(message):
 
 if __name__ == '__main__':
     logger.info("=" * 50)
-    logger.info("🤖 File ID Bot (@seplitza_fileid_bot)")
+    logger.info("🤖 Get Video File ID Bot (@get_video_file_id_bot)")
     logger.info("=" * 50)
     logger.info(f"✅ Бот запущен: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("📹 Готов к получению медиа-файлов...")
