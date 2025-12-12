@@ -2,22 +2,22 @@
 """
 Telegram-бот для получения file_id видео и других медиа
 Использование: перешлите медиа боту, он вернет file_id
+Бот: @seplitza_fileid_bot
 """
 
 import telebot
-import os
-import sys
-from dotenv import load_dotenv
+import logging
 from datetime import datetime
 
-# Загрузка переменных окружения
-load_dotenv()
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN_INFO')
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-if not TOKEN:
-    print("❌ Ошибка: Не найден TELEGRAM_BOT_TOKEN_INFO в .env файле")
-    print("💡 Создайте .env файл с переменной TELEGRAM_BOT_TOKEN_INFO")
-    sys.exit(1)
+# Токен бота
+TOKEN = "8037839466:AAF17Z5jGssJZxk9pO9VhM7uagdEZ_WZPHw"
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -312,18 +312,29 @@ def handle_other(message):
     bot.reply_to(message, response, parse_mode='Markdown')
 
 if __name__ == '__main__':
-    print("=" * 50)
-    print("🤖 Telegram File ID Bot")
-    print("=" * 50)
-    print(f"✅ Бот запущен: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("📹 Готов к получению медиа-файлов...")
-    print("💡 Нажмите Ctrl+C для остановки")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("🤖 File ID Bot (@seplitza_fileid_bot)")
+    logger.info("=" * 50)
+    logger.info(f"✅ Бот запущен: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("📹 Готов к получению медиа-файлов...")
+    logger.info("💡 Нажмите Ctrl+C для остановки")
+    logger.info("=" * 50)
     
     try:
-        bot.polling(none_stop=True, interval=0)
+        # Удаляем вебхук
+        bot.remove_webhook()
+        
+        # Запускаем polling
+        bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        
     except KeyboardInterrupt:
-        print("\n" + "=" * 50)
-        print("🛑 Бот остановлен")
-        print(f"📊 Обработано файлов: {sum(stats.values()) - 1}")
-        print("=" * 50)
+        logger.info("\n" + "=" * 50)
+        logger.info("🛑 Бот остановлен пользователем")
+        total = sum([v for k, v in stats.items() if k != 'start_time'])
+        logger.info(f"📊 Обработано файлов: {total}")
+        logger.info("=" * 50)
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
+    finally:
+        logger.info("👋 Завершение работы бота")
+
