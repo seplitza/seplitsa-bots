@@ -1542,9 +1542,36 @@ def find_knowledge_by_key(key):
     logger.warning(f"Ключ не найден: '{original_key}' (норм: '{normalized_key}')")
     return None
 
+def extract_video_file_id(text):
+    """Извлекает file_id видео из текста базы знаний"""
+    # Формат: [VIDEO:file_id]
+    match = re.search(r'\[VIDEO:([^\]]+)\]', text)
+    if match:
+        return match.group(1)
+    return None
+
+def send_video_if_present(chat_id, text):
+    """Проверяет наличие видео в тексте и отправляет его"""
+    file_id = extract_video_file_id(text)
+    if file_id:
+        try:
+            logger.info(f"📹 Отправка видео с file_id: {file_id[:20]}...")
+            bot.send_video(chat_id, file_id)
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки видео: {e}")
+            return False
+    return False
+
 def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown', enhance_links=False, current_article_key=None):
     """Безопасная отправка сообщения с автоматическим определением режима"""
     try:
+        # Проверяем и отправляем видео, если есть
+        has_video = send_video_if_present(chat_id, text)
+        
+        # Удаляем маркер видео из текста
+        text = re.sub(r'\[VIDEO:[^\]]+\]\n*', '', text)
+        
         # Временно отключаем обогащение ссылками - переходим на inline кнопки
         # if enhance_links and parse_mode == 'Markdown':
         #     text = enhance_text_with_links(text, current_article_key=current_article_key)
