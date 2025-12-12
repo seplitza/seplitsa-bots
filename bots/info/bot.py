@@ -2301,11 +2301,10 @@ def handle_message(message):
         update_user_progress(user.id, 'topic_read', user_message)
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Отправляем полный текст с автоматическими ссылками
-        response_text = f"📋 **{user_message}**\n\n{knowledge}"
+        # Отправляем полный текст без заголовка (контент уже содержит заголовок)
         send_safe_message(
             message.chat.id,
-            response_text,
+            knowledge,
             parse_mode='Markdown',
             enhance_links=True,
             current_article_key=user_message
@@ -2464,12 +2463,12 @@ def handle_inline_knowledge_button(call):
                 # Отвечаем на callback
                 bot.answer_callback_query(call.id, "📖 Загружаю статью...")
                 
-                response = f"📖 **{found_key}**\n\n{knowledge[found_key]}"
+                # Отправляем контент без заголовка (контент уже содержит заголовок)
                 
                 # Генерируем связанные кнопки для этой статьи
                 related_markup = generate_related_buttons(knowledge[found_key], knowledge, found_key)
                 
-                send_safe_message(call.message.chat.id, response, reply_markup=related_markup)
+                send_safe_message(call.message.chat.id, knowledge[found_key], reply_markup=related_markup)
                 
                 logger.info(f"👤 {call.from_user.username or 'Unknown'} открыл статью '{found_key}' через inline кнопку")
             else:
