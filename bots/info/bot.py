@@ -1569,8 +1569,11 @@ def send_safe_message(chat_id, text, reply_markup=None, parse_mode='Markdown', e
         # Проверяем и отправляем видео, если есть
         has_video = send_video_if_present(chat_id, text)
         
-        # Удаляем маркер видео из текста
-        text = re.sub(r'\[VIDEO:[^\]]+\]\n*', '', text)
+        # Удаляем маркер видео из текста (включая возможные мусорные символы после)
+        text = re.sub(r'\[VIDEO:[^\]]+\][^\n]*\n*', '', text)
+        
+        # Удаляем "Содержание:" если есть в начале
+        text = re.sub(r'^Содержание:\s*', '', text, flags=re.MULTILINE)
         
         # Временно отключаем обогащение ссылками - переходим на inline кнопки
         # if enhance_links and parse_mode == 'Markdown':
