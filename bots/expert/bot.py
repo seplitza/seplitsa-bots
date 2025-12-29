@@ -601,6 +601,29 @@ def send_short_response_with_details(chat_id, topic, text, max_length=300):
             parse_mode=None
         )
 
+def send_new_year_promo(chat_id):
+    """Отправляет всплывающее объявление о новогодней акции"""
+    promo_text = """
+🎉 ✨ НОВОГОДНЯЯ АКЦИЯ ✨ 🎉
+
+🎁 Закажи СЕГОДНЯ и получи скидку 10% на ВСЕ услуги следующего года!
+
+⏰ СПЕШИТЕ! Предложение действует только в новогодние дни!
+
+Это ваш шанс начать год с омоложения по специальной цене! 
+
+Узнать больше и сделать заказ можно на нашем сайте 👇
+    """
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🌐 Перейти на сайт", url="https://seplitsa.com"))
+    keyboard.add(InlineKeyboardButton("❌ Закрыть", callback_data="close_promo"))
+    
+    try:
+        bot.send_message(chat_id, promo_text, reply_markup=keyboard, parse_mode=None)
+    except Exception as e:
+        logger.error(f"Ошибка отправки промо: {e}")
+
 # ==================== ОБРАБОТЧИКИ КОМАНД ====================
 @bot.message_handler(commands=['start', 'menu', 'меню'])
 def send_welcome(message):
@@ -627,6 +650,10 @@ def send_welcome(message):
         """
     
     bot.send_message(message.chat.id, welcome_text, reply_markup=keyboard)
+    
+    # Показываем новогоднее объявление о скидке
+    time.sleep(0.5)  # Небольшая задержка для лучшего восприятия
+    send_new_year_promo(message.chat.id)
 @bot.message_handler(commands=['debug'])
 def debug_command(message):
     """Отладочная команда для проверки поиска"""
@@ -885,6 +912,16 @@ def handle_all_messages(message):
             message.chat.id,
             "🤖 Используйте кнопки меню для получения конкретной информации о системе Сеплица."
         )
+
+@bot.callback_query_handler(func=lambda call: call.data == 'close_promo')
+def close_promo(call):
+    """Закрытие объявления о новогодней акции"""
+    bot.answer_callback_query(call.id, "✅ Объявление закрыто")
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.error(f"Ошибка при удалении объявления: {e}")
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('det_'))
 def handle_details(call):
     """Обработка кнопки 'Подробнее'"""
